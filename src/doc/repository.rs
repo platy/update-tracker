@@ -17,23 +17,23 @@ impl DocRepo {
     fn new(base: impl AsRef<Path>, events: mpsc::Sender<DocEvent>) -> io::Result<DocRepo> {
         let base = base.as_ref().to_path_buf();
         fs::create_dir_all(&base)?;
-        Ok(DocRepo {
-            base,
-            events,
-        })
+        Ok(DocRepo { base, events })
     }
 
     fn create(&self, url: Url, timestamp: DateTime<Utc>) -> io::Result<TempDoc> {
         let doc = DocumentVersion { url, timestamp };
         let path = self.path_for_version(&doc);
+        let is_new_doc = !self.document_exists(&doc.url)?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(path)?;
-        Ok(TempDoc { doc, file, events: self.events.clone() })
+        let file = fs::OpenOptions::new().write(true).create_new(true).open(path)?;
+        Ok(TempDoc {
+            is_new_doc,
+            doc,
+            file,
+            events: self.events.clone(),
+        })
     }
 
     fn open(&self, doc_version: &DocumentVersion) -> io::Result<impl io::Read> {
@@ -65,6 +65,14 @@ impl DocRepo {
         }))
     }
 
+    fn document_exists(&self, url: &Url) -> io::Result<bool> {
+        match fs::read_dir(self.path_for_doc(&Document { url: url.clone() })) {
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(false),
+            Ok(mut iter) => Ok(iter.next().is_some()),
+            Err(err) => Err(err),
+        }
+    }
+
     fn path_for_doc(&self, Document { url }: &Document) -> PathBuf {
         let path = url.path().strip_prefix('/').unwrap_or(url.path());
         self.base.join(url.host_str().unwrap_or("local")).join(path)
@@ -81,6 +89,7 @@ impl DocRepo {
 
 /// TODO Maybe this should write to a temp file to start with and then be moved into place, that way the whole repo structure will consist of complete files
 struct TempDoc {
+    is_new_doc: bool, // TODO replace with something better when fixing the above
     doc: DocumentVersion,
     file: fs::File,
     events: mpsc::Sender<DocEvent>,
@@ -89,9 +98,19 @@ struct TempDoc {
 impl TempDoc {
     fn done(mut self) -> io::Result<DocumentVersion> {
         self.file.flush()?;
-        // TODO - this is not always creating, add antoher test and fix for update
-        self.events.send(DocEvent::Created { url: self.doc.url.clone() }).map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-        self.events.send(DocEvent::Updated { url: self.doc.url.clone(), timestamp: self.doc.timestamp }).map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        if self.is_new_doc {
+            self.events
+                .send(DocEvent::Created {
+                    url: self.doc.url.clone(),
+                })
+                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        }
+        self.events
+            .send(DocEvent::Updated {
+                url: self.doc.url.clone(),
+                timestamp: self.doc.timestamp,
+            })
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
         Ok(self.doc)
     }
 }
@@ -112,7 +131,10 @@ mod test {
         io::Read,
         sync,
         thread::{self, spawn},
+        time,
     };
+
+    use thread::yield_now;
 
     use super::*;
 
@@ -122,56 +144,79 @@ mod test {
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let doc_content = "test document";
         let timestamp = Utc::now();
+        let should = DocumentVersion {
+            url: url.clone(),
+            timestamp,
+        };
         let mut buf = vec![];
 
         let mut write = repo.create(url.clone(), timestamp).unwrap();
         write.write_all(doc_content.as_bytes()).unwrap();
 
         let doc: DocumentVersion = write.done().unwrap();
-        assert_eq!(
-            doc,
-            DocumentVersion {
-                url: url.clone(),
-                timestamp
-            }
-        );
+        assert_eq!(doc, should);
         repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
         assert_eq!(buf, doc_content.as_bytes());
 
         let doc: DocumentVersion = repo.ensure_version(url.clone(), timestamp).unwrap();
-        assert_eq!(
-            doc,
-            DocumentVersion {
-                url: url.clone(),
-                timestamp
-            }
-        );
+        assert_eq!(doc, should);
         buf.clear();
         repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
         assert_eq!(buf, doc_content.as_bytes());
 
-        let mut docs = repo.list_versions(url.clone()).unwrap();
-        let doc = docs.next().unwrap().unwrap();
-        assert_eq!(
-            doc,
-            DocumentVersion {
-                url: url.clone(),
-                timestamp
-            }
-        );
+        let doc = repo.list_versions(url.clone()).unwrap().next().unwrap().unwrap();
+        assert_eq!(doc, should);
         buf.clear();
         repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
         assert_eq!(buf, doc_content.as_bytes());
 
+        thread::sleep(time::Duration::from_millis(1));
         let events = events.lock().unwrap();
+        assert_eq!(events.len(), 2);
         assert_eq!(events[0], DocEvent::Created { url: url.clone() });
-        assert_eq!(
-            events[1],
-            DocEvent::Updated {
-                url: url.clone(),
-                timestamp
-            }
-        );
+        assert_eq!(events[1], DocEvent::Updated { url, timestamp });
+    }
+
+    #[test]
+    fn updated_doc_creates_event_and_becomes_available() {
+        let (repo, events) = test_repo("updated_doc_creates_event_and_becomes_available");
+        let url: Url = "http://www.example.org/test/doc".parse().unwrap();
+        let doc_content = "new content";
+        let timestamp = Utc::now();
+        let should = DocumentVersion {
+            url: url.clone(),
+            timestamp,
+        };
+        let mut buf = vec![];
+
+        let mut write = repo.create(url.clone(), Utc::now()).unwrap();
+        write.write_all("old content".as_bytes()).unwrap();
+        let doc = write.done().unwrap();
+        repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
+        thread::sleep(time::Duration::from_millis(1));
+        assert_eq!(events.lock().unwrap().drain(..).count(), 2);
+
+        let mut write = repo.create(url.clone(), timestamp).unwrap();
+        write.write_all(doc_content.as_bytes()).unwrap();
+        let doc: DocumentVersion = write.done().unwrap();
+
+        assert_eq!(doc, should);
+        buf.clear();
+        repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
+        assert_eq!(buf, doc_content.as_bytes());
+
+        let doc: DocumentVersion = repo.ensure_version(url.clone(), timestamp).unwrap();
+        assert_eq!(doc, should);
+        buf.clear();
+        repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
+        assert_eq!(buf, doc_content.as_bytes());
+
+        assert_eq!(repo.list_versions(url.clone()).unwrap().count(), 2);
+
+        thread::sleep(time::Duration::from_millis(1));
+        let events = events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0], DocEvent::Updated { url, timestamp });
     }
 
     fn test_repo(name: &str) -> (DocRepo, sync::Arc<sync::Mutex<Vec<DocEvent>>>) {

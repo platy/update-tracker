@@ -1,26 +1,25 @@
 use super::*;
-use chrono::{format::parse, DateTime, Utc};
-use mpsc::Sender;
+use chrono::{DateTime, Utc};
 use std::{
-    fs::{self, File},
+    fs,
     io::{self, Write},
     path::{Path, PathBuf},
     sync::mpsc,
 };
 
-struct DocRepo {
+pub struct DocRepo {
     base: PathBuf,
     events: mpsc::Sender<DocEvent>,
 }
 
 impl DocRepo {
-    fn new(base: impl AsRef<Path>, events: mpsc::Sender<DocEvent>) -> io::Result<Self> {
+    pub fn new(base: impl AsRef<Path>, events: mpsc::Sender<DocEvent>) -> io::Result<Self> {
         let base = base.as_ref().to_path_buf();
         fs::create_dir_all(&base)?;
         Ok(Self { base, events })
     }
 
-    fn create(&self, url: Url, timestamp: DateTime<Utc>) -> io::Result<TempDoc> {
+    pub fn create(&self, url: Url, timestamp: DateTime<Utc>) -> io::Result<TempDoc> {
         let doc = DocumentVersion { url, timestamp };
         let path = self.path_for_version(&doc);
         let is_new_doc = !self.document_exists(&doc.url)?;
@@ -36,36 +35,37 @@ impl DocRepo {
         })
     }
 
-    fn open(&self, doc_version: &DocumentVersion) -> io::Result<impl io::Read> {
+    pub fn open(&self, doc_version: &DocumentVersion) -> io::Result<impl io::Read> {
         fs::File::open(self.path_for_version(doc_version))
     }
 
-    fn ensure_version(&self, url: Url, timestamp: DateTime<Utc>) -> io::Result<DocumentVersion> {
+    pub fn ensure_version(&self, url: Url, timestamp: DateTime<Utc>) -> io::Result<DocumentVersion> {
         let doc_version = DocumentVersion { url, timestamp };
         fs::File::open(self.path_for_version(&doc_version))?;
         Ok(doc_version)
     }
 
-    fn list_versions(&self, url: Url) -> io::Result<impl Iterator<Item = io::Result<DocumentVersion>>> {
+    /// Lists all updates on the specified url from newest to oldest
+    pub fn list_versions(&self, url: Url) -> io::Result<impl Iterator<Item = io::Result<DocumentVersion>>> {
         let doc = Document { url: url.clone() };
-        let dir = fs::read_dir(self.path_for_doc(&doc))?;
-        Ok(dir.map(move |dir_result| {
-            dir_result.and_then(|dir_entry| {
-                let timestamp = dir_entry
-                    .file_name()
-                    .to_str()
-                    .unwrap()
-                    .parse()
-                    .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
-                Ok(DocumentVersion {
-                    url: url.clone(),
-                    timestamp,
-                })
+        let mut dir: Vec<fs::DirEntry> = fs::read_dir(self.path_for_doc(&doc))?.collect::<io::Result<_>>()?;
+        dir.sort_by_key(fs::DirEntry::file_name);
+
+        Ok(dir.into_iter().rev().map(move |dir_entry| {
+            let timestamp = dir_entry
+                .file_name()
+                .to_str()
+                .unwrap()
+                .parse()
+                .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+            Ok(DocumentVersion {
+                url: url.clone(),
+                timestamp,
             })
         }))
     }
 
-    fn document_exists(&self, url: &Url) -> io::Result<bool> {
+    pub fn document_exists(&self, url: &Url) -> io::Result<bool> {
         match fs::read_dir(self.path_for_doc(&Document { url: url.clone() })) {
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(false),
             Ok(mut iter) => Ok(iter.next().is_some()),
@@ -74,12 +74,12 @@ impl DocRepo {
     }
 
     fn path_for_doc(&self, Document { url }: &Document) -> PathBuf {
-        let path = url.path().strip_prefix('/').unwrap_or(url.path());
+        let path = url.path().strip_prefix('/').unwrap_or_else(|| url.path());
         self.base.join(url.host_str().unwrap_or("local")).join(path)
     }
 
     fn path_for_version(&self, DocumentVersion { url, timestamp }: &DocumentVersion) -> PathBuf {
-        let path = url.path().strip_prefix('/').unwrap_or(url.path());
+        let path = url.path().strip_prefix('/').unwrap_or_else(|| url.path());
         self.base
             .join(url.host_str().unwrap_or("local"))
             .join(path)
@@ -88,7 +88,7 @@ impl DocRepo {
 }
 
 /// TODO Maybe this should write to a temp file to start with and then be moved into place, that way the whole repo structure will consist of complete files
-struct TempDoc {
+pub struct TempDoc {
     is_new_doc: bool, // TODO replace with something better when fixing the above
     doc: DocumentVersion,
     file: fs::File,
@@ -130,11 +130,9 @@ mod test {
     use std::{
         io::Read,
         sync,
-        thread::{self, spawn},
+        thread::{self},
         time,
     };
-
-    use thread::yield_now;
 
     use super::*;
 
@@ -189,7 +187,9 @@ mod test {
         };
         let mut buf = vec![];
 
-        let mut write = repo.create(url.clone(), Utc::now()).unwrap();
+        let mut write = repo
+            .create(url.clone(), Utc::now() - chrono::Duration::seconds(60))
+            .unwrap();
         write.write_all("old content".as_bytes()).unwrap();
         let doc = write.done().unwrap();
         repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
@@ -211,7 +211,13 @@ mod test {
         repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
         assert_eq!(buf, doc_content.as_bytes());
 
-        assert_eq!(repo.list_versions(url.clone()).unwrap().count(), 2);
+        let mut list = repo.list_versions(url.clone()).unwrap();
+        let doc = list.next().unwrap().unwrap();
+        assert_eq!(doc, should);
+        buf.clear();
+        repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
+        assert_eq!(buf, doc_content.as_bytes());
+        let _old = list.next().unwrap().unwrap();
 
         thread::sleep(time::Duration::from_millis(1));
         let events = events.lock().unwrap();

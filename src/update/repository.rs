@@ -1,28 +1,27 @@
 use super::*;
-use chrono::{format::parse, DateTime, Utc};
+use chrono::{DateTime, Utc};
 use io::Read;
-use mpsc::Sender;
 use std::{
     cmp::max,
-    fs::{self, File},
+    fs::{self},
     io::{self, Write},
     path::{Path, PathBuf},
     sync::mpsc,
 };
 
-struct UpdateRepo {
+pub struct UpdateRepo {
     base: PathBuf,
     events: mpsc::Sender<UpdateEvent>,
 }
 
 impl UpdateRepo {
-    fn new(base: impl AsRef<Path>, events: mpsc::Sender<UpdateEvent>) -> io::Result<Self> {
+    pub fn new(base: impl AsRef<Path>, events: mpsc::Sender<UpdateEvent>) -> io::Result<Self> {
         let base = base.as_ref().to_path_buf();
         fs::create_dir_all(&base)?;
         Ok(Self { base, events })
     }
 
-    fn create(&self, url: Url, timestamp: DateTime<Utc>, change: &str) -> io::Result<Update> {
+    pub fn create(&self, url: Url, timestamp: DateTime<Utc>, change: &str) -> io::Result<Update> {
         let path = self.path_for(&url, Some(&timestamp));
         let update = Update {
             url,
@@ -39,14 +38,14 @@ impl UpdateRepo {
         self.events
             .send(UpdateEvent::Added {
                 url: update.url.clone(),
-                timestamp: timestamp,
+                timestamp,
             })
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
         if self.latest(&update.url)? == timestamp {
             self.events
                 .send(UpdateEvent::New {
                     url: update.url.clone(),
-                    timestamp: timestamp,
+                    timestamp,
                 })
                 .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
         }
@@ -54,7 +53,7 @@ impl UpdateRepo {
     }
 
     /// Returns error if there is no update
-    fn latest(&self, url: &Url) -> io::Result<DateTime<Utc>> {
+    pub fn latest(&self, url: &Url) -> io::Result<DateTime<Utc>> {
         let dir = fs::read_dir(self.path_for(&url, None))?;
         let mut latest = None;
         for entry in dir {
@@ -71,10 +70,10 @@ impl UpdateRepo {
                 latest = Some(timestamp);
             }
         }
-        latest.ok_or(io::ErrorKind::NotFound.into())
+        latest.ok_or_else(|| io::ErrorKind::NotFound.into())
     }
 
-    fn get_update(&self, url: Url, timestamp: DateTime<Utc>) -> io::Result<Update> {
+    pub fn get_update(&self, url: Url, timestamp: DateTime<Utc>) -> io::Result<Update> {
         let mut file = fs::File::open(self.path_for(&url, Some(&timestamp)))?;
         let mut change = vec![];
         file.read_to_end(&mut change)?;
@@ -83,30 +82,30 @@ impl UpdateRepo {
         Ok(doc_version)
     }
 
-    fn list_updates<'a>(&self, url: Url) -> io::Result<impl Iterator<Item = io::Result<Update>> + '_> {
-        let dir = fs::read_dir(self.path_for(&url, None))?;
-        Ok(dir.map(move |dir_result| {
-            dir_result.and_then(|dir_entry| {
-                let timestamp = dir_entry
-                    .file_name()
-                    .to_str()
-                    .unwrap()
-                    .parse()
-                    .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
-                let mut change = String::new();
-                let change = String::from_utf8(fs::read(&self.path_for(&url, Some(&timestamp)))?)
-                    .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
-                Ok(Update {
-                    url: url.clone(),
-                    timestamp,
-                    change,
-                })
+    /// Lists all updates on the specified url from newest to oldest
+    pub fn list_updates(&self, url: Url) -> io::Result<impl DoubleEndedIterator<Item = io::Result<Update>> + '_> {
+        let mut dir: Vec<fs::DirEntry> = fs::read_dir(self.path_for(&url, None))?.collect::<io::Result<_>>()?;
+        dir.sort_by_key(fs::DirEntry::file_name);
+
+        Ok(dir.into_iter().rev().map(move |dir_entry| {
+            let timestamp = dir_entry
+                .file_name()
+                .to_str()
+                .unwrap()
+                .parse()
+                .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+            let change = String::from_utf8(fs::read(&self.path_for(&url, Some(&timestamp)))?)
+                .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+            Ok(Update {
+                url: url.clone(),
+                timestamp,
+                change,
             })
         }))
     }
 
     fn path_for(&self, url: &Url, timestamp: Option<&DateTime<Utc>>) -> PathBuf {
-        let path = url.path().strip_prefix('/').unwrap_or(url.path());
+        let path = url.path().strip_prefix('/').unwrap_or_else(|| url.path());
         let path = self.base.join(url.host_str().unwrap_or("local")).join(path);
         if let Some(timestamp) = timestamp {
             path.join(timestamp.to_rfc3339())
@@ -118,14 +117,7 @@ impl UpdateRepo {
 
 #[cfg(test)]
 mod test {
-    use std::{
-        io::Read,
-        sync,
-        thread::{self, spawn},
-        time,
-    };
-
-    use thread::yield_now;
+    use std::{sync, thread, time};
 
     use super::*;
 
@@ -134,7 +126,7 @@ mod test {
         let (repo, events) = test_repo("new_update_creates_events_and_becomes_available");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let timestamp = Utc::now() - chrono::Duration::minutes(60);
-        let change = "change description";
+        let change = "older change";
         let should = Update {
             url: url.clone(),
             timestamp,
@@ -151,7 +143,10 @@ mod test {
         let update: Update = repo.get_update(url.clone(), timestamp).unwrap();
         assert_eq!(update, should);
 
-        let update = repo.list_updates(url.clone()).unwrap().next().unwrap().unwrap();
+        let mut list = repo.list_updates(url.clone()).unwrap();
+        let update = list.next().unwrap().unwrap();
+        assert_eq!(update.change, "newest change");
+        let update = list.next().unwrap().unwrap();
         assert_eq!(update, should);
 
         thread::sleep(time::Duration::from_millis(1));
@@ -189,7 +184,11 @@ mod test {
         let update: Update = repo.get_update(url.clone(), timestamp).unwrap();
         assert_eq!(update, should);
 
-        assert_eq!(repo.list_updates(url.clone()).unwrap().count(), 2);
+        let mut list = repo.list_updates(url.clone()).unwrap();
+        let update = list.next().unwrap().unwrap();
+        assert_eq!(update, should);
+        let update = list.next().unwrap().unwrap();
+        assert_eq!(update.change, "old change");
 
         thread::sleep(time::Duration::from_millis(1));
         let events = events.lock().unwrap();

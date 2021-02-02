@@ -14,10 +14,10 @@ struct DocRepo {
 }
 
 impl DocRepo {
-    fn new(base: impl AsRef<Path>, events: mpsc::Sender<DocEvent>) -> io::Result<DocRepo> {
+    fn new(base: impl AsRef<Path>, events: mpsc::Sender<DocEvent>) -> io::Result<Self> {
         let base = base.as_ref().to_path_buf();
         fs::create_dir_all(&base)?;
-        Ok(DocRepo { base, events })
+        Ok(Self { base, events })
     }
 
     fn create(&self, url: Url, timestamp: DateTime<Utc>) -> io::Result<TempDoc> {

@@ -1,22 +1,16 @@
 use super::*;
 use chrono::{DateTime, Utc};
-use std::{
-    fs,
-    io::{self, Write},
-    path::{Path, PathBuf},
-    sync::mpsc,
-};
+use std::{fs, io::{self, Write}, iter, path::{Path, PathBuf}};
 
 pub struct DocRepo {
     base: PathBuf,
-    events: mpsc::Sender<DocEvent>,
 }
 
 impl DocRepo {
-    pub fn new(base: impl AsRef<Path>, events: mpsc::Sender<DocEvent>) -> io::Result<Self> {
+    pub fn new(base: impl AsRef<Path>) -> io::Result<Self> {
         let base = base.as_ref().to_path_buf();
         fs::create_dir_all(&base)?;
-        Ok(Self { base, events })
+        Ok(Self { base })
     }
 
     pub fn create(&self, url: Url, timestamp: DateTime<Utc>) -> io::Result<TempDoc> {
@@ -31,7 +25,6 @@ impl DocRepo {
             is_new_doc,
             doc,
             file,
-            events: self.events.clone(),
         })
     }
 
@@ -92,26 +85,24 @@ pub struct TempDoc {
     is_new_doc: bool, // TODO replace with something better when fixing the above
     doc: DocumentVersion,
     file: fs::File,
-    events: mpsc::Sender<DocEvent>,
 }
 
 impl TempDoc {
-    pub fn done(mut self) -> io::Result<DocumentVersion> {
+    pub fn done(mut self) -> io::Result<(DocumentVersion, impl Iterator<Item = DocEvent>)> {
         self.file.flush()?;
-        if self.is_new_doc {
-            self.events
-                .send(DocEvent::Created {
+        let events = if self.is_new_doc {
+            Some(DocEvent::Created {
                     url: self.doc.url.clone(),
                 })
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-        }
-        self.events
-            .send(DocEvent::Updated {
+        } else {
+            None
+        }.into_iter().chain(
+            iter::once(DocEvent::Updated {
                 url: self.doc.url.clone(),
                 timestamp: self.doc.timestamp,
             })
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-        Ok(self.doc)
+        );
+        Ok((self.doc, events))
     }
 }
 

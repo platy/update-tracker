@@ -1,4 +1,4 @@
-use std::{fs::remove_dir_all, io, str::FromStr, sync::mpsc};
+use std::{fs::remove_dir_all, io, str::FromStr};
 
 use anyhow::{bail, format_err, Context, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -14,8 +14,7 @@ fn main() -> Result<()> {
     let reference = repo.find_reference(&dotenv::var("GITGOV_REF")?)?;
     let mut commit = reference.peel_to_commit()?;
 
-    let (events, _blah) = mpsc::channel();
-    let mut update_repo = UpdateRepo::new(REPO_BASE, events)?;
+    let mut update_repo = UpdateRepo::new(REPO_BASE)?;
 
     loop {
         if commit.author().email().unwrap() == "info@gov.uk" {
@@ -50,7 +49,7 @@ fn import_commit(extractor: Extractor, repo: &mut UpdateRepo) -> Result<()> {
     let change = extractor.message()?;
     let _tag = extractor.tag()?;
     match repo.create(url.clone(), ts, change) {
-        Ok(update) => {
+        Ok((update, _events)) => {
             println!("create {:?}", &update);
             Ok(())
         }
@@ -93,7 +92,7 @@ impl<'r> Extractor<'r> {
     }
 
     fn timestamp(&self) -> Result<DateTime<Utc>> {
-        let date = self.commit.message().unwrap().split(": ").nth(0).unwrap();
+        let date = self.commit.message().unwrap().split(": ").next().unwrap();
         // println!("date{}", date);
         const DATE_FORMAT: &str = "%I:%M%p, %d %B %Y";
         let local_ts = NaiveDateTime::parse_from_str(date, DATE_FORMAT).context("parsing timestamp")?;

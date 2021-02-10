@@ -5,23 +5,27 @@ use std::{
     cmp::max,
     fs::{self},
     io::{self, Write},
+    iter,
     path::{Path, PathBuf},
-    sync::mpsc,
 };
 
 pub struct UpdateRepo {
     base: PathBuf,
-    events: mpsc::Sender<UpdateEvent>,
 }
 
 impl UpdateRepo {
-    pub fn new(base: impl AsRef<Path>, events: mpsc::Sender<UpdateEvent>) -> io::Result<Self> {
+    pub fn new(base: impl AsRef<Path>) -> io::Result<Self> {
         let base = base.as_ref().to_path_buf();
         fs::create_dir_all(&base)?;
-        Ok(Self { base, events })
+        Ok(Self { base })
     }
 
-    pub fn create(&self, url: Url, timestamp: DateTime<Utc>, change: &str) -> io::Result<Update> {
+    pub fn create(
+        &self,
+        url: Url,
+        timestamp: DateTime<Utc>,
+        change: &str,
+    ) -> io::Result<(Update, impl Iterator<Item = UpdateEvent>)> {
         let path = self.path_for(&url, Some(&timestamp));
         let update = Update {
             url,
@@ -35,21 +39,19 @@ impl UpdateRepo {
         file.write_all(update.change.as_bytes())?;
         file.flush()?;
 
-        self.events
-            .send(UpdateEvent::Added {
+        let events = iter::once(UpdateEvent::Added {
+            url: update.url.clone(),
+            timestamp,
+        })
+        .chain(if self.latest(&update.url)? == timestamp {
+            Some(UpdateEvent::New {
                 url: update.url.clone(),
                 timestamp,
             })
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-        if self.latest(&update.url)? == timestamp {
-            self.events
-                .send(UpdateEvent::New {
-                    url: update.url.clone(),
-                    timestamp,
-                })
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-        }
-        Ok(update)
+        } else {
+            None
+        });
+        Ok((update, events))
     }
 
     /// Returns error if there is no update
@@ -123,7 +125,7 @@ mod test {
 
     #[test]
     fn old_update_creates_events_and_becomes_available() {
-        let (repo, events) = test_repo("new_update_creates_events_and_becomes_available");
+        let repo = test_repo("new_update_creates_events_and_becomes_available");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let timestamp = Utc::now() - chrono::Duration::minutes(60);
         let change = "older change";
@@ -133,11 +135,11 @@ mod test {
             change: change.to_owned(),
         };
 
-        let _ = repo.create(url.clone(), Utc::now(), "newest change").unwrap();
+        let (_, events) = repo.create(url.clone(), Utc::now(), "newest change").unwrap();
         thread::sleep(time::Duration::from_millis(1));
-        assert_eq!(events.lock().unwrap().drain(..).count(), 2);
+        assert_eq!(events.count(), 2);
 
-        let update = repo.create(url.clone(), timestamp, change).unwrap();
+        let (update, events) = repo.create(url.clone(), timestamp, change).unwrap();
         assert_eq!(update, should);
 
         let update: Update = repo.get_update(url.clone(), timestamp).unwrap();
@@ -150,20 +152,18 @@ mod test {
         assert_eq!(update, should);
 
         thread::sleep(time::Duration::from_millis(1));
-        let events = events.lock().unwrap();
-        assert_eq!(events.len(), 1);
         assert_eq!(
-            events[0],
-            UpdateEvent::Added {
+            events.collect::<Vec<_>>(),
+            [UpdateEvent::Added {
                 url: url.clone(),
                 timestamp
-            }
+            }]
         );
     }
 
     #[test]
     fn newer_update_creates_event_and_becomes_available() {
-        let (repo, events) = test_repo("newer_update_creates_event_and_becomes_available");
+        let repo = test_repo("newer_update_creates_event_and_becomes_available");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let change = "new change";
         let timestamp = Utc::now();
@@ -173,12 +173,13 @@ mod test {
             change: change.to_owned(),
         };
 
-        repo.create(url.clone(), Utc::now() - chrono::Duration::minutes(60), "old change")
+        let (_, events) = repo
+            .create(url.clone(), Utc::now() - chrono::Duration::minutes(60), "old change")
             .unwrap();
         thread::sleep(time::Duration::from_millis(1));
-        assert_eq!(events.lock().unwrap().drain(..).count(), 2);
+        assert_eq!(events.count(), 2);
 
-        let update = repo.create(url.clone(), timestamp, change).unwrap();
+        let (update, events) = repo.create(url.clone(), timestamp, change).unwrap();
         assert_eq!(update, should);
 
         let update: Update = repo.get_update(url.clone(), timestamp).unwrap();
@@ -191,36 +192,24 @@ mod test {
         assert_eq!(update.change, "old change");
 
         thread::sleep(time::Duration::from_millis(1));
-        let events = events.lock().unwrap();
-        assert_eq!(events.len(), 2);
         assert_eq!(
-            events[0],
-            UpdateEvent::Added {
-                url: url.clone(),
-                timestamp
-            }
-        );
-        assert_eq!(
-            events[1],
-            UpdateEvent::New {
-                url: url.clone(),
-                timestamp
-            }
+            events.collect::<Vec<_>>(),
+            [
+                UpdateEvent::Added {
+                    url: url.clone(),
+                    timestamp
+                },
+                UpdateEvent::New {
+                    url: url.clone(),
+                    timestamp
+                }
+            ]
         );
     }
 
-    fn test_repo(name: &str) -> (UpdateRepo, sync::Arc<sync::Mutex<Vec<UpdateEvent>>>) {
-        let events = sync::Arc::new(sync::Mutex::new(vec![]));
-        let events1 = events.clone();
-        let (event_sender, event_receiver) = mpsc::channel();
-        thread::spawn(move || {
-            while let Ok(event) = event_receiver.recv() {
-                events.lock().unwrap().push(event);
-            }
-        });
+    fn test_repo(name: &str) -> UpdateRepo {
         let path = format!("tmp/{}", name);
         let _ = fs::remove_dir_all(&path);
-        let repo = UpdateRepo::new(path, event_sender).unwrap();
-        (repo, events1)
+        UpdateRepo::new(path).unwrap()
     }
 }

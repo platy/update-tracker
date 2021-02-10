@@ -11,6 +11,12 @@ pub struct Update {
     change: String,
 }
 
+impl Update {
+    pub fn change(&self) -> &str {
+        &self.change
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum UpdateEvent {
     /// Any update is added

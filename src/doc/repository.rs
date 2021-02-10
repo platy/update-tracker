@@ -96,7 +96,7 @@ pub struct TempDoc {
 }
 
 impl TempDoc {
-    fn done(mut self) -> io::Result<DocumentVersion> {
+    pub fn done(mut self) -> io::Result<DocumentVersion> {
         self.file.flush()?;
         if self.is_new_doc {
             self.events

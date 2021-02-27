@@ -105,7 +105,8 @@ fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Res
                     Ok(())
                 } else {
                     // let diff = html_diff::get_differences(from_utf8(&data)?, from_utf8(blob.content())?); // TODO pre strip test data
-                    let diff = prettydiff::diff_lines(from_utf8(&data)?, from_utf8(blob.content())?);
+                    let existing = normalise(blob.content())?;
+                    let diff = prettydiff::diff_lines(from_utf8(&data)?, &existing);
                     Err(format_err!(
                         "Update exists for {}/{} with different content : {}",
                         &url.as_str(),
@@ -170,6 +171,11 @@ impl<Wr: Write> Serializer for NormalizingHtmlSerializer<Wr> {
     fn write_processing_instruction(&mut self, target: &str, data: &str) -> io::Result<()> {
         self.0.write_processing_instruction(target, data)
     }
+}
+
+#[test]
+fn test_normalise_html() {
+    assert_eq!(&normalise(br#"<div class="foo" id="bar"></div>"#).unwrap(), &normalise(br#"<div id="bar" class="foo"></div>"#).unwrap());
 }
 
 struct Extractor<'r> {

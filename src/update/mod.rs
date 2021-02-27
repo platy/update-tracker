@@ -1,3 +1,5 @@
+use std::fmt;
+
 use chrono::{DateTime, Utc};
 use url::Url;
 
@@ -14,6 +16,12 @@ pub struct Update {
 impl Update {
     pub fn change(&self) -> &str {
         &self.change
+    }
+}
+
+impl fmt::Display for Update {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::write(f, format_args!("Update at {} on {}", self.timestamp.to_rfc3339(), self.url.as_str()))
     }
 }
 

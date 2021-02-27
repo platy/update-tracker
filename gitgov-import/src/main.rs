@@ -1,12 +1,13 @@
 use std::{
+    collections::HashSet,
     fs::remove_dir_all,
     io,
     str::{from_utf8, FromStr},
 };
 
-use anyhow::{bail, format_err, Context, Result};
+use anyhow::{bail, ensure, format_err, Context, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
-use git2::{Blob, Commit, Diff, Repository};
+use git2::{Blob, Commit, Diff, Oid, Repository};
 use html5ever::serialize::{HtmlSerializer, Serialize, SerializeOpts, Serializer, TraversalScope};
 use io::{Read, Write};
 use update_tracker::{doc::DocRepo, update::UpdateRepo};
@@ -61,13 +62,13 @@ fn import_updates_from_commit(extractor: &Extractor, update_repo: &mut UpdateRep
     let _tag = extractor.tag()?;
     match update_repo.create(url.clone(), ts, change) {
         Ok((update, _events)) => {
-            println!("create {:?}", &update);
+            println!("create {}", &update);
             Ok(())
         }
         Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
             let existing = update_repo.get_update(url, ts)?;
             if existing.change() == change {
-                println!("exists {:?}", &existing);
+                println!("exists {}", &existing);
                 Ok(())
             } else {
                 Err(format_err!(
@@ -92,20 +93,25 @@ fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Res
             Ok(mut writer) => {
                 writer.write_all(content.as_bytes())?;
                 let (update, _events) = writer.done()?;
-                println!("create {:?}", &update);
+                println!("create {}", &update);
                 Ok(())
             }
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
-                let existing = doc_repo.ensure_version(url, ts)?;
+                let existing = doc_repo.ensure_version(url.clone(), ts)?;
                 let mut data: Vec<u8> = vec![];
                 doc_repo.open(&existing)?.read_to_end(&mut data)?;
                 if data == content.as_bytes() {
-                    println!("exists {:?}", &existing);
+                    println!("exists {}", &existing);
                     Ok(())
                 } else {
                     // let diff = html_diff::get_differences(from_utf8(&data)?, from_utf8(blob.content())?); // TODO pre strip test data
                     let diff = prettydiff::diff_lines(from_utf8(&data)?, from_utf8(blob.content())?);
-                    Err(format_err!("Update exists with different content : {}", diff,))
+                    Err(format_err!(
+                        "Update exists for {}/{} with different content : {}",
+                        &url.as_str(),
+                        &ts,
+                        diff,
+                    ))
                 }
             }
             Err(err) => Err(err).context("error writing update"),
@@ -179,16 +185,56 @@ impl<'r> Extractor<'r> {
     }
 
     fn doc_versions(&self) -> Result<Vec<(Url, Blob)>> {
+        let mut removed_paths = HashSet::new();
+        let mut added_paths = HashSet::new();
         let mut v = vec![];
         for diff in self.diff()?.deltas() {
             let file = diff.new_file();
-            let path = file.path().unwrap();
-            let url = Url::from_str(&format!("https://www.gov.uk/{}", path.to_str().unwrap()))?;
+            let mut path = file.path().unwrap().to_owned();
+            if file.id() == Oid::zero() {
+                removed_paths.insert(path.to_owned());
+                eprintln!("Skipping deleted file, TODO watch for renames and normalise filenames");
+                continue;
+            }
             let blob =
                 self.repo
                     .find_blob(file.id())
                     .context(format!("finding blob {} at path {:?}", file.id(), path))?;
+
+            if path.extension().is_none() {
+                let content = std::str::from_utf8(blob.content())
+                    .context("failed attempting to detect filetype of blob without extension")?;
+                if content.trim_start().starts_with('<') {
+                    eprintln!(
+                        "Inferred a .html extension for file {:?}, with content {}..",
+                        path,
+                        &content.trim_start()[0..10]
+                    );
+                    path.set_extension("html");
+                } else {
+                    bail!(
+                        "Couldn't infer extension for file {:?}, starting with content {}..",
+                        path,
+                        &content[0..10]
+                    );
+                }
+            }
+
+            if diff.old_file().id() == Oid::zero() {
+                added_paths.insert(path.to_owned());
+            }
+
+            let url = Url::from_str(&format!("https://www.gov.uk/{}", path.to_str().unwrap()))?;
             v.push((url, blob));
+        }
+        for removed_path in removed_paths {
+            ensure!(
+                added_paths.contains(&removed_path) || added_paths.contains(&removed_path.with_extension("html")),
+                "{} : removed path {:?} not matched in added paths {:?}",
+                self.commit.id(),
+                removed_path,
+                added_paths
+            );
         }
         Ok(v)
     }

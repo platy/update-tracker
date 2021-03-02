@@ -34,12 +34,12 @@ fn main() -> Result<()> {
             };
             import_docs_from_commit(&extractor, &mut doc_repo)
                 .context(format!("Importing docs from {}", commit.id()))?;
-            if let Err(error) = import_updates_from_commit(&extractor, &mut update_repo) {
-                println!("Error on {} : {}", commit.id(), error);
-                if !error.to_string().contains("Too many files") {
-                    break;
-                }
-            }
+            // if let Err(error) = import_updates_from_commit(&extractor, &mut update_repo) {
+            //     println!("Error on {} : {}", commit.id(), error);
+            //     if !error.to_string().contains("Too many files") {
+            //         break;
+            //     }
+            // }
         } else {
             println!("Non-update commit : {}", commit.message().unwrap());
         }
@@ -84,26 +84,28 @@ fn import_updates_from_commit(extractor: &Extractor, update_repo: &mut UpdateRep
 fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Result<()> {
     let docs = extractor.doc_versions().context("loading doc versions")?;
     let ts = extractor.retrieved_at();
-    let _tag = extractor.tag()?;
-    for (url, blob) in docs {
-        let content = normalise(blob.content())?;
+    for (url, is_html, blob) in docs {
         match doc_repo.create(url.clone(), ts) {
             Ok(mut writer) => {
-                writer.write_all(content.as_bytes())?;
+                if is_html {
+                    writer.write_all(normalise(blob.content()).context("Failed html normalisation")?.as_bytes())?;
+                } else {
+                    writer.write_all(blob.content())?;
+                }
                 let (update, _events) = writer.done()?;
                 println!("create {}", &update);
                 Ok(())
             }
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
                 let existing = doc_repo.ensure_version(url.clone(), ts)?;
-                let mut data: Vec<u8> = vec![];
-                doc_repo.open(&existing)?.read_to_end(&mut data)?;
-                if data == content.as_bytes() {
+                let mut existing_data: Vec<u8> = vec![];
+                doc_repo.open(&existing)?.read_to_end(&mut existing_data)?;
+                let content = normalise(blob.content()).context("Failed html normalisation")?;
+                if existing_data == content.as_bytes() {
                     println!("exists {}", &existing);
                     Ok(())
                 } else {
-                    let existing = normalise(blob.content())?;
-                    let diff = prettydiff::diff_lines(from_utf8(&data)?, &existing);
+                    let diff = prettydiff::diff_lines(from_utf8(&existing_data)?, &content);
                     Err(format_err!(
                         "Update exists for {}/{} with different content : {}",
                         &url.as_str(),
@@ -190,7 +192,7 @@ impl<'r> Extractor<'r> {
         Ok(self.repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None)?)
     }
 
-    fn doc_versions(&self) -> Result<Vec<(Url, Blob)>> {
+    fn doc_versions(&self) -> Result<Vec<(Url, bool, Blob)>> {
         let mut v = vec![];
         for diff in self.diff()?.deltas() {
             let file = diff.new_file();
@@ -226,8 +228,10 @@ impl<'r> Extractor<'r> {
                 }
             }
 
+            let is_html = path.extension().map_or(false, |extension| extension == "html");
+
             let url = Url::from_str(&format!("https://www.gov.uk/{}", path.to_str().unwrap()))?;
-            v.push((url, blob));
+            v.push((url, is_html, blob));
         }
         Ok(v)
     }

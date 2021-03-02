@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{bail, ensure, format_err, Context, Result};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
 use git2::{Blob, Commit, Diff, Oid, Repository};
 use html5ever::serialize::{HtmlSerializer, Serialize, SerializeOpts, Serializer, TraversalScope};
 use io::{Read, Write};
@@ -55,9 +55,8 @@ fn main() -> Result<()> {
 }
 
 fn import_updates_from_commit(extractor: &Extractor, update_repo: &mut UpdateRepo) -> Result<()> {
-    // println!("import {}", extractor.commit.message().unwrap());
     let url = extractor.url()?;
-    let ts = extractor.timestamp()?;
+    let ts = extractor.updated_at()?;
     let change = extractor.message()?;
     let _tag = extractor.tag()?;
     match update_repo.create(url.clone(), ts, change) {
@@ -83,9 +82,8 @@ fn import_updates_from_commit(extractor: &Extractor, update_repo: &mut UpdateRep
 }
 
 fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Result<()> {
-    // println!("import {}", extractor.commit.message().unwrap());
     let docs = extractor.doc_versions().context("loading doc versions")?;
-    let ts = extractor.timestamp()?;
+    let ts = extractor.retrieved_at();
     let _tag = extractor.tag()?;
     for (url, blob) in docs {
         let content = normalise(blob.content())?;
@@ -104,7 +102,6 @@ fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Res
                     println!("exists {}", &existing);
                     Ok(())
                 } else {
-                    // let diff = html_diff::get_differences(from_utf8(&data)?, from_utf8(blob.content())?); // TODO pre strip test data
                     let existing = normalise(blob.content())?;
                     let diff = prettydiff::diff_lines(from_utf8(&data)?, &existing);
                     Err(format_err!(
@@ -175,7 +172,10 @@ impl<Wr: Write> Serializer for NormalizingHtmlSerializer<Wr> {
 
 #[test]
 fn test_normalise_html() {
-    assert_eq!(&normalise(br#"<div class="foo" id="bar"></div>"#).unwrap(), &normalise(br#"<div id="bar" class="foo"></div>"#).unwrap());
+    assert_eq!(
+        &normalise(br#"<div class="foo" id="bar"></div>"#).unwrap(),
+        &normalise(br#"<div id="bar" class="foo"></div>"#).unwrap()
+    );
 }
 
 struct Extractor<'r> {
@@ -191,15 +191,15 @@ impl<'r> Extractor<'r> {
     }
 
     fn doc_versions(&self) -> Result<Vec<(Url, Blob)>> {
-        let mut removed_paths = HashSet::new();
-        let mut added_paths = HashSet::new();
         let mut v = vec![];
         for diff in self.diff()?.deltas() {
             let file = diff.new_file();
             let mut path = file.path().unwrap().to_owned();
             if file.id() == Oid::zero() {
-                removed_paths.insert(path.to_owned());
-                eprintln!("Skipping deleted file, TODO watch for renames and normalise filenames");
+                eprintln!(
+                    "Deleted file means nothing, it was due to a couple of bugs (old version of fetcher recorded files with the url they were retrieved from which means conflicts between files and directories & new fetcher would overwrite those files with a directory) : {:?}",
+                    path
+                );
                 continue;
             }
             let blob =
@@ -226,21 +226,8 @@ impl<'r> Extractor<'r> {
                 }
             }
 
-            if diff.old_file().id() == Oid::zero() {
-                added_paths.insert(path.to_owned());
-            }
-
             let url = Url::from_str(&format!("https://www.gov.uk/{}", path.to_str().unwrap()))?;
             v.push((url, blob));
-        }
-        for removed_path in removed_paths {
-            ensure!(
-                added_paths.contains(&removed_path) || added_paths.contains(&removed_path.with_extension("html")),
-                "{} : removed path {:?} not matched in added paths {:?}",
-                self.commit.id(),
-                removed_path,
-                added_paths
-            );
         }
         Ok(v)
     }
@@ -258,12 +245,21 @@ impl<'r> Extractor<'r> {
         Ok(url)
     }
 
-    fn timestamp(&self) -> Result<DateTime<Utc>> {
+    /// timestamp of update
+    fn updated_at(&self) -> Result<DateTime<Utc>> {
         let date = self.commit.message().unwrap().split(": ").next().unwrap();
         // println!("date{}", date);
         const DATE_FORMAT: &str = "%I:%M%p, %d %B %Y";
         let local_ts = NaiveDateTime::parse_from_str(date, DATE_FORMAT).context("parsing timestamp")?;
         Ok(DateTime::from_utc(local_ts, Utc)) //FIXME, it's not really UTC
+    }
+
+    /// timestamp of retrieval
+    fn retrieved_at(&self) -> DateTime<Utc> {
+        let commit_time = self.commit.time();
+        FixedOffset::east(commit_time.offset_minutes() * 60)
+            .timestamp(commit_time.seconds(), 0)
+            .into()
     }
 
     fn message(&self) -> Result<&str> {
@@ -273,13 +269,11 @@ impl<'r> Extractor<'r> {
     }
 
     fn tag(&self) -> Result<&str> {
-        let tag = self
-            .commit
-            .message()
-            .unwrap()
+        let message = self.commit.message().unwrap();
+        let tag = message
             .split(" [")
             .nth(1)
-            .unwrap()
+            .context(format!("Couldn't find tag in '{}'", message))?
             .split(']')
             .next()
             .unwrap();

@@ -1,6 +1,11 @@
 use super::*;
 use chrono::{DateTime, Utc};
-use std::{fs, io::{self, Write}, iter, path::{Path, PathBuf}};
+use std::{
+    fs,
+    io::{self, Write},
+    iter,
+    path::{Path, PathBuf},
+};
 
 pub struct DocRepo {
     base: PathBuf,
@@ -21,11 +26,7 @@ impl DocRepo {
             fs::create_dir_all(parent)?;
         }
         let file = fs::OpenOptions::new().write(true).create_new(true).open(path)?;
-        Ok(TempDoc {
-            is_new_doc,
-            doc,
-            file,
-        })
+        Ok(TempDoc { is_new_doc, doc, file })
     }
 
     pub fn open(&self, doc_version: &DocumentVersion) -> io::Result<impl io::Read> {
@@ -92,16 +93,16 @@ impl TempDoc {
         self.file.flush()?;
         let events = if self.is_new_doc {
             Some(DocEvent::Created {
-                    url: self.doc.url.clone(),
-                })
+                url: self.doc.url.clone(),
+            })
         } else {
             None
-        }.into_iter().chain(
-            iter::once(DocEvent::Updated {
-                url: self.doc.url.clone(),
-                timestamp: self.doc.timestamp,
-            })
-        );
+        }
+        .into_iter()
+        .chain(iter::once(DocEvent::Updated {
+            url: self.doc.url.clone(),
+            timestamp: self.doc.timestamp,
+        }));
         Ok((self.doc, events))
     }
 }
@@ -120,7 +121,6 @@ impl io::Write for TempDoc {
 mod test {
     use std::{
         io::Read,
-        sync,
         thread::{self},
         time,
     };
@@ -129,7 +129,7 @@ mod test {
 
     #[test]
     fn new_doc_creates_events_and_becomes_available() {
-        let (repo, events) = test_repo("new_doc_creates_events_and_becomes_available");
+        let repo = test_repo("new_doc_creates_events_and_becomes_available");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let doc_content = "test document";
         let timestamp = Utc::now();
@@ -142,7 +142,7 @@ mod test {
         let mut write = repo.create(url.clone(), timestamp).unwrap();
         write.write_all(doc_content.as_bytes()).unwrap();
 
-        let doc: DocumentVersion = write.done().unwrap();
+        let (doc, events) = write.done().unwrap();
         assert_eq!(doc, should);
         repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
         assert_eq!(buf, doc_content.as_bytes());
@@ -160,7 +160,7 @@ mod test {
         assert_eq!(buf, doc_content.as_bytes());
 
         thread::sleep(time::Duration::from_millis(1));
-        let events = events.lock().unwrap();
+        let events: Vec<_> = events.collect();
         assert_eq!(events.len(), 2);
         assert_eq!(events[0], DocEvent::Created { url: url.clone() });
         assert_eq!(events[1], DocEvent::Updated { url, timestamp });
@@ -168,7 +168,7 @@ mod test {
 
     #[test]
     fn updated_doc_creates_event_and_becomes_available() {
-        let (repo, events) = test_repo("updated_doc_creates_event_and_becomes_available");
+        let repo = test_repo("updated_doc_creates_event_and_becomes_available");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let doc_content = "new content";
         let timestamp = Utc::now();
@@ -182,14 +182,13 @@ mod test {
             .create(url.clone(), Utc::now() - chrono::Duration::seconds(60))
             .unwrap();
         write.write_all("old content".as_bytes()).unwrap();
-        let doc = write.done().unwrap();
+        let (doc, _events) = write.done().unwrap();
         repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
         thread::sleep(time::Duration::from_millis(1));
-        assert_eq!(events.lock().unwrap().drain(..).count(), 2);
 
         let mut write = repo.create(url.clone(), timestamp).unwrap();
         write.write_all(doc_content.as_bytes()).unwrap();
-        let doc: DocumentVersion = write.done().unwrap();
+        let (doc, events) = write.done().unwrap();
 
         assert_eq!(doc, should);
         buf.clear();
@@ -211,23 +210,15 @@ mod test {
         let _old = list.next().unwrap().unwrap();
 
         thread::sleep(time::Duration::from_millis(1));
-        let events = events.lock().unwrap();
+        let events: Vec<_> = events.collect();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0], DocEvent::Updated { url, timestamp });
     }
 
-    fn test_repo(name: &str) -> (DocRepo, sync::Arc<sync::Mutex<Vec<DocEvent>>>) {
-        let events = sync::Arc::new(sync::Mutex::new(vec![]));
-        let events1 = events.clone();
-        let (event_sender, event_receiver) = mpsc::channel();
-        thread::spawn(move || {
-            while let Ok(event) = event_receiver.recv() {
-                events.lock().unwrap().push(event);
-            }
-        });
+    fn test_repo(name: &str) -> DocRepo {
         let path = format!("tmp/{}", name);
         let _ = fs::remove_dir_all(&path);
-        let repo = DocRepo::new(path, event_sender).unwrap();
-        (repo, events1)
+        let repo = DocRepo::new(path).unwrap();
+        repo
     }
 }

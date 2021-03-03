@@ -119,7 +119,7 @@ impl UpdateRepo {
 
 #[cfg(test)]
 mod test {
-    use std::{sync, thread, time};
+    use std::{thread, time};
 
     use super::*;
 

@@ -19,7 +19,14 @@ pub struct DocumentVersion {
 
 impl fmt::Display for DocumentVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::write(f, format_args!("Doc retrieved at {} on {}", self.timestamp.to_rfc3339(), self.url.as_str()))
+        fmt::write(
+            f,
+            format_args!(
+                "Doc retrieved at {} on {}",
+                self.timestamp.to_rfc3339(),
+                self.url.as_str()
+            ),
+        )
     }
 }
 

@@ -396,6 +396,7 @@ dependencies = [
  "git2",
  "html-diff",
  "html5ever 0.25.1",
+ "lazy_static 1.4.0",
  "prettydiff",
  "scraper",
  "update-tracker",

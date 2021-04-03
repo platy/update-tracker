@@ -1,21 +1,23 @@
 use super::*;
 use chrono::{DateTime, Utc};
 use std::{
+    ffi::OsStr,
     fs,
     io::{self, Write},
     iter,
-    path::{Path, PathBuf},
+    path::{self, Path, PathBuf},
 };
 
 pub struct DocRepo {
     base: PathBuf,
+    base_url: Url,
 }
 
 impl DocRepo {
-    pub fn new(base: impl AsRef<Path>) -> io::Result<Self> {
+    pub fn new(base: impl AsRef<Path>, base_url: Url) -> io::Result<Self> {
         let base = base.as_ref().to_path_buf();
         fs::create_dir_all(&base)?;
-        Ok(Self { base })
+        Ok(Self { base, base_url })
     }
 
     pub fn create(&self, url: Url, timestamp: DateTime<Utc>) -> io::Result<TempDoc> {
@@ -57,6 +59,22 @@ impl DocRepo {
                 timestamp,
             })
         }))
+    }
+
+    /// Lists all updates
+    pub fn list_all(&self) -> io::Result<IterDocs<'_>> {
+        let root_path: PathBuf = self
+            .base
+            .components()
+            .chain(iter::once(path::Component::Normal(OsStr::new(
+                self.base_url.host_str().unwrap(),
+            ))))
+            .collect();
+        Ok(IterDocs {
+            repo: self,
+            url: self.base_url.clone(),
+            stack: vec![fs::read_dir(root_path)?],
+        })
     }
 
     pub fn document_exists(&self, url: &Url) -> io::Result<bool> {
@@ -117,10 +135,72 @@ impl io::Write for TempDoc {
     }
 }
 
+// iterator over all docs in the repo
+pub struct IterDocs<'r> {
+    repo: &'r DocRepo,
+    url: Url,
+    stack: Vec<fs::ReadDir>,
+}
+
+impl<'r> Iterator for IterDocs<'r> {
+    type Item = io::Result<DocumentVersion>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // ascend the tree if at the end of branches and get the next `DirEntry`
+        let mut next_dir_entry = loop {
+            if let Some(iter) = self.stack.last_mut() {
+                if let Some(entry) = iter.next() {
+                    break entry;
+                } else {
+                    self.stack.pop().unwrap();
+                    self.url.path_segments_mut().unwrap().pop();
+                }
+            } else {
+                return None;
+            }
+        };
+
+        // descend to the next doc
+        loop {
+            match next_dir_entry {
+                Err(err) => break Some(Err(err)),
+                Ok(dir_entry) => {
+                    let file_type = dir_entry.file_type().unwrap();
+                    if file_type.is_dir() {
+                        self.url
+                            .path_segments_mut()
+                            .unwrap()
+                            .push(dir_entry.file_name().to_str().unwrap());
+                        let mut dir =
+                            fs::read_dir(self.repo.path_for_doc(&Document { url: self.url.clone() })).unwrap();
+                        next_dir_entry = dir.next().expect("todo: handle empty dir in repo");
+                        self.stack.push(dir);
+                    } else if file_type.is_file() {
+                        let timestamp = dir_entry
+                            .file_name()
+                            .to_str()
+                            .unwrap()
+                            .parse()
+                            .map_err(|error| io::Error::new(io::ErrorKind::Other, error))
+                            .unwrap();
+                        break Some(Ok(DocumentVersion {
+                            url: self.url.clone(),
+                            timestamp,
+                        }));
+                    } else {
+                        panic!("symlink in repo");
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::{
         io::Read,
+        str::FromStr,
         thread::{self},
         time,
     };
@@ -218,7 +298,7 @@ mod test {
     fn test_repo(name: &str) -> DocRepo {
         let path = format!("tmp/{}", name);
         let _ = fs::remove_dir_all(&path);
-        let repo = DocRepo::new(path).unwrap();
+        let repo = DocRepo::new(path, Url::from_str("http://example.com").unwrap()).unwrap();
         repo
     }
 }

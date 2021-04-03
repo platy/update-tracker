@@ -69,9 +69,9 @@ impl TagRepo {
     /// Returns error if there is no tag
     pub fn list_updates_in_tag(
         &self,
-        tag_name: String,
+        tag: &Tag,
     ) -> io::Result<impl Iterator<Item = Result<UpdateRef, <UpdateRef as FromStr>::Err>>> {
-        let reader = BufReader::new(fs::File::open(&self.path_for(&Tag { name: tag_name }))?);
+        let reader = BufReader::new(fs::File::open(&self.path_for(tag))?);
         Ok(reader.lines().map(|line| line.unwrap().parse()))
     }
 

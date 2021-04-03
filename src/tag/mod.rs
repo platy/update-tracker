@@ -5,7 +5,7 @@ pub use repository::TagRepo;
 
 use crate::update::UpdateRef;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Tag {
     name: String,
 }

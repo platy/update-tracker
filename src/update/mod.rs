@@ -28,10 +28,10 @@ impl fmt::Display for Update {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UpdateRef {
-    url: Url,
-    timestamp: DateTime<Utc>,
+    pub url: Url,
+    pub timestamp: DateTime<Utc>,
 }
 
 impl fmt::Display for UpdateRef {
@@ -55,13 +55,11 @@ impl FromStr for UpdateRef {
 
 impl From<(Url, DateTime<Utc>)> for UpdateRef {
     fn from((url, timestamp): (Url, DateTime<Utc>)) -> Self {
-        Self {
-            url,
-            timestamp,
-        }
+        Self { url, timestamp }
     }
 }
 
+#[derive(Debug)]
 pub enum UpdateRefParseError {
     ChronoParseError(chrono::ParseError),
     UrlParseError(url::ParseError),
@@ -77,6 +75,26 @@ impl From<chrono::ParseError> for UpdateRefParseError {
 impl From<url::ParseError> for UpdateRefParseError {
     fn from(error: url::ParseError) -> Self {
         Self::UrlParseError(error)
+    }
+}
+
+impl std::error::Error for UpdateRefParseError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            UpdateRefParseError::ChronoParseError(err) => Some(err),
+            UpdateRefParseError::UrlParseError(err) => Some(err),
+            UpdateRefParseError::FragmentNotProvided => None,
+        }
+    }
+}
+
+impl fmt::Display for UpdateRefParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UpdateRefParseError::ChronoParseError(err) => write!(f, "Error parsing timestamp : {}", err),
+            UpdateRefParseError::UrlParseError(err) => write!(f, "Error parsing url : {}", err),
+            UpdateRefParseError::FragmentNotProvided => f.write_str("Timestamp fragment not provided"),
+        }
     }
 }
 

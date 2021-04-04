@@ -44,11 +44,12 @@ impl FromStr for UpdateRef {
     type Err = UpdateRefParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let url: Url = s.parse()?;
+        let mut url: Url = s.parse()?;
         let timestamp = url
             .fragment()
             .ok_or(UpdateRefParseError::FragmentNotProvided)?
             .parse()?;
+        url.set_fragment(None);
         Ok(UpdateRef { url, timestamp })
     }
 }

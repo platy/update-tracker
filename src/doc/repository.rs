@@ -10,14 +10,13 @@ use std::{
 
 pub struct DocRepo {
     base: PathBuf,
-    base_url: Url,
 }
 
 impl DocRepo {
-    pub fn new(base: impl AsRef<Path>, base_url: Url) -> io::Result<Self> {
+    pub fn new(base: impl AsRef<Path>) -> io::Result<Self> {
         let base = base.as_ref().to_path_buf();
         fs::create_dir_all(&base)?;
-        Ok(Self { base, base_url })
+        Ok(Self { base })
     }
 
     pub fn create(&self, url: Url, timestamp: DateTime<Utc>) -> io::Result<TempDoc> {
@@ -62,17 +61,17 @@ impl DocRepo {
     }
 
     /// Lists all updates
-    pub fn list_all(&self) -> io::Result<IterDocs<'_>> {
+    pub fn list_all(&self, base_url: &Url) -> io::Result<IterDocs<'_>> {
         let root_path: PathBuf = self
             .base
             .components()
             .chain(iter::once(path::Component::Normal(OsStr::new(
-                self.base_url.host_str().unwrap(),
+                base_url.host_str().unwrap(),
             ))))
             .collect();
         Ok(IterDocs {
             repo: self,
-            url: self.base_url.clone(),
+            url: base_url.clone(),
             stack: vec![fs::read_dir(root_path)?],
         })
     }
@@ -183,8 +182,9 @@ impl<'r> Iterator for IterDocs<'r> {
                             .parse()
                             .map_err(|error| io::Error::new(io::ErrorKind::Other, error))
                             .unwrap();
+                        let url = self.url.clone();
                         break Some(Ok(DocumentVersion {
-                            url: self.url.clone(),
+                            url,
                             timestamp,
                         }));
                     } else {

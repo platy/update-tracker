@@ -11,6 +11,11 @@ pub struct Tag {
 }
 
 impl Tag {
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+        }
+    }
     pub fn name(&self) -> &str {
         &self.name
     }

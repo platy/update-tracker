@@ -1,13 +1,13 @@
 use std::{io, iter::empty, str::FromStr};
 
 use anyhow::{bail, Context, Result};
-use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use git2::{Blob, Commit, Diff, Oid};
 use html5ever::serialize::{HtmlSerializer, Serialize, SerializeOpts, Serializer, TraversalScope};
 use io::Write;
-use lazy_static::lazy_static;
-use scraper::{Html, Selector};
+use scraper::{Html};
 
+use update_tracker::doc::iter_history;
 use url::Url;
 pub struct Extractor<'r> {
     repo: &'r git2::Repository,
@@ -29,7 +29,7 @@ impl<'r> Extractor<'r> {
         let mut v = vec![];
         for diff in self.diff()?.deltas() {
             let file = diff.new_file();
-            let mut path = file.path().unwrap().to_owned();
+            let path = file.path().unwrap().to_owned();
             if file.id() == Oid::zero() {
                 eprintln!(
                     "Deleted file means nothing, it was due to a couple of bugs (old version of fetcher recorded files with the url they were retrieved from which means conflicts between files and directories & new fetcher would overwrite those files with a directory) : {:?}",
@@ -42,16 +42,12 @@ impl<'r> Extractor<'r> {
                     .find_blob(file.id())
                     .context(format!("finding blob {} at path {:?}", file.id(), path))?;
 
-            if path.extension().is_none() {
+            let is_html = if let Some(extension) = path.extension() { extension == "html" }
+            else {
                 let content = std::str::from_utf8(blob.content())
                     .context("failed attempting to detect filetype of blob without extension")?;
                 if content.trim_start().starts_with('<') {
-                    eprintln!(
-                        "Inferred a .html extension for file {:?}, with content {}..",
-                        path,
-                        &content.trim_start()[0..10]
-                    );
-                    path.set_extension("html");
+                    true
                 } else {
                     bail!(
                         "Couldn't infer extension for file {:?}, starting with content {}..",
@@ -59,9 +55,9 @@ impl<'r> Extractor<'r> {
                         &content[0..10]
                     );
                 }
-            }
+            };
 
-            let content = if path.extension().map_or(false, |extension| extension == "html") {
+            let content = if is_html {
                 DocExtractor::from_html(blob.content())?
             } else {
                 DocExtractor::Blob(blob)
@@ -89,8 +85,8 @@ impl<'r> Extractor<'r> {
         let date = self.commit.message().unwrap().split(": ").next().unwrap();
         // println!("date{}", date);
         const DATE_FORMAT: &str = "%I:%M%p, %d %B %Y";
-        let local_ts = NaiveDateTime::parse_from_str(date, DATE_FORMAT).context("parsing timestamp")?;
-        Ok(DateTime::from_utc(local_ts, Utc)) //FIXME, it's not really UTC
+        let local_ts = chrono_tz::Europe::London.datetime_from_str(date, DATE_FORMAT).context("parsing timestamp")?;
+        Ok(local_ts.with_timezone(&Utc))
     }
 
     /// timestamp of retrieval
@@ -101,9 +97,10 @@ impl<'r> Extractor<'r> {
             .into()
     }
 
-    pub fn message(&self) -> Result<&str> {
-        let message = self.commit.message().unwrap().split(": ").nth(1).unwrap();
-        let message = message.split(" [").next().unwrap();
+    pub fn message(&self) -> Result<String> {
+        let message = self.commit.message().unwrap().splitn(2, ": ").nth(1).unwrap();
+        let message = message.split(" [").next().unwrap().trim();
+        let message = message.replace('‘', "'").replace('’', "'");
         Ok(message)
     }
 
@@ -148,10 +145,6 @@ impl DocExtractor<'static> {
     }
 }
 
-lazy_static! {
-    static ref UPDATE_SELECTOR: Selector = Selector::parse(".app-c-published-dates--history li time").unwrap();
-}
-
 impl<'r> DocExtractor<'r> {
     pub fn as_bytes(&self) -> &[u8] {
         match self {
@@ -167,25 +160,9 @@ impl<'r> DocExtractor<'r> {
         }
     }
 
-    pub fn history(&self) -> Box<dyn Iterator<Item = Result<(DateTime<Utc>, String)>> + '_> {
+    pub fn history(&self) -> Box<dyn Iterator<Item = (DateTime<Utc>, String)> + '_> {
         if let Self::Html(html, _) = self {
-            Box::new(html.select(&UPDATE_SELECTOR).map(|time_elem| {
-                let time =
-                    DateTime::parse_from_rfc3339(time_elem.value().attr("datetime").context("no datetime attribute")?)?;
-                let description = time_elem // faffing around - this is bullshit
-                    .next_sibling()
-                    .unwrap()
-                    .next_sibling()
-                    .context("expected sibling of time element in history")?
-                    .children()
-                    .next()
-                    .unwrap()
-                    .value()
-                    .as_text()
-                    .unwrap()
-                    .to_string();
-                Ok((time.into(), description))
-            }))
+            Box::new(iter_history(html))
         } else {
             Box::new(empty())
         }

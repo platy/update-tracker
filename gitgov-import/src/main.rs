@@ -54,13 +54,13 @@ fn import_tag_from_commit(extractor: &Extractor, tag_repo: &mut TagRepo) -> Resu
         let mut matching_urls = vec![];
         for (url, content) in extractor.doc_versions().context("loading doc versions")? {
             eprintln!("Checking {} with {} history items", &url, content.history().count());
-            for r in content.history() {
-                let (updated_at, description) = r?;
+            for (updated_at, description) in content.history() {
                 if updated_at.with_second(0).unwrap() == ts && change == description {
                     matching_urls.push((url, updated_at));
                     break;
                 } else if updated_at.with_second(0).unwrap() == ts {
-                    eprintln!("{:?} doesn't match {:?}", change, description);
+                    eprintln!("{:?} doesn't match \n{:?}", change.as_bytes(), description.as_bytes());
+                    eprintln!("{:?} doesn't match \n{:?}", change, description);
                 } else if change == description {
                     eprintln!("{} doesn't match {}", updated_at.with_second(0).unwrap(), ts);
                 } else {

@@ -22,12 +22,17 @@ fn main() -> Result<()> {
     let mut doc_repo = DocRepo::new(DOC_REPO_BASE)?;
     let mut tag_repo = TagRepo::new(TAG_REPO_BASE)?;
 
+    let mut tag_imports_skipped = 0;
+
     loop {
         if commit.author().email().unwrap() == "info@gov.uk" {
             let extractor = Extractor::new(&repo, &commit);
             import_docs_from_commit(&extractor, &mut doc_repo)
                 .context(format!("Importing docs from {}", commit.id()))?;
-            import_tag_from_commit(&extractor, &mut tag_repo).context(format!("Importing tag from {}", commit.id()))?;
+            if let Err(e) = import_tag_from_commit(&extractor, &mut tag_repo).context(format!("Importing tag from {}", commit.id())) {
+                println!("Error importing tag : {:? }", e);
+                tag_imports_skipped += 1;
+            }
         } else {
             println!("Non-update commit : {}", commit.message().unwrap());
         }
@@ -38,6 +43,7 @@ fn main() -> Result<()> {
             break;
         }
     }
+    println!("{} errors importing tags", tag_imports_skipped);
 
     Ok(())
 }

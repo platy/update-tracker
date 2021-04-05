@@ -5,7 +5,7 @@ use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use git2::{Blob, Commit, Diff, Oid};
 use html5ever::serialize::{HtmlSerializer, Serialize, SerializeOpts, Serializer, TraversalScope};
 use io::Write;
-use scraper::{Html};
+use scraper::Html;
 
 use update_tracker::doc::iter_history;
 use url::Url;
@@ -42,8 +42,9 @@ impl<'r> Extractor<'r> {
                     .find_blob(file.id())
                     .context(format!("finding blob {} at path {:?}", file.id(), path))?;
 
-            let is_html = if let Some(extension) = path.extension() { extension == "html" }
-            else {
+            let is_html = if let Some(extension) = path.extension() {
+                extension == "html"
+            } else {
                 let content = std::str::from_utf8(blob.content())
                     .context("failed attempting to detect filetype of blob without extension")?;
                 if content.trim_start().starts_with('<') {
@@ -85,7 +86,9 @@ impl<'r> Extractor<'r> {
         let date = self.commit.message().unwrap().split(": ").next().unwrap();
         // println!("date{}", date);
         const DATE_FORMAT: &str = "%I:%M%p, %d %B %Y";
-        let local_ts = chrono_tz::Europe::London.datetime_from_str(date, DATE_FORMAT).context("parsing timestamp")?;
+        let local_ts = chrono_tz::Europe::London
+            .datetime_from_str(date, DATE_FORMAT)
+            .context("parsing timestamp")?;
         Ok(local_ts.with_timezone(&Utc))
     }
 

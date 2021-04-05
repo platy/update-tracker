@@ -1,7 +1,7 @@
 use std::{fs::remove_dir_all, io, str::from_utf8};
 
 use anyhow::{ensure, format_err, Context, Result};
-use chrono::Timelike;
+use chrono::{DateTime, Timelike, Utc};
 use extractor::Extractor;
 use git2::Repository;
 use io::{Read, Write};
@@ -21,14 +21,13 @@ fn main() -> Result<()> {
 
     let mut doc_repo = DocRepo::new(DOC_REPO_BASE)?;
     let mut tag_repo = TagRepo::new(TAG_REPO_BASE)?;
-    
+
     loop {
         if commit.author().email().unwrap() == "info@gov.uk" {
             let extractor = Extractor::new(&repo, &commit);
             import_docs_from_commit(&extractor, &mut doc_repo)
                 .context(format!("Importing docs from {}", commit.id()))?;
-            import_tag_from_commit(&extractor, &mut tag_repo)
-                .context(format!("Importing tag from {}", commit.id()))?;
+            import_tag_from_commit(&extractor, &mut tag_repo).context(format!("Importing tag from {}", commit.id()))?;
         } else {
             println!("Non-update commit : {}", commit.message().unwrap());
         }
@@ -48,32 +47,48 @@ fn import_tag_from_commit(extractor: &Extractor, tag_repo: &mut TagRepo) -> Resu
     let ts = extractor.updated_at()?;
     let change = extractor.message()?;
     let tag = extractor.tag().unwrap_or("Unknown");
-    
+
+    let match_score = |(_, updated_at, description): &(_, DateTime<Utc>, String)| {
+        (updated_at.with_second(0).unwrap() == ts) as u8 + (change == *description) as u8
+    };
+
     let (url, ts) = extractor.url().map(|url| (url, ts)).or_else(|_err| {
-        // the urls of files with matching updates
-        let mut matching_urls = vec![];
-        for (url, content) in extractor.doc_versions().context("loading doc versions")? {
-            eprintln!("Checking {} with {} history items", &url, content.history().count());
-            for (updated_at, description) in content.history() {
-                if updated_at.with_second(0).unwrap() == ts && change == description {
-                    matching_urls.push((url, updated_at));
-                    break;
-                } else if updated_at.with_second(0).unwrap() == ts {
-                    eprintln!("{:?} doesn't match \n{:?}", change.as_bytes(), description.as_bytes());
-                    eprintln!("{:?} doesn't match \n{:?}", change, description);
-                } else if change == description {
-                    eprintln!("{} doesn't match {}", updated_at.with_second(0).unwrap(), ts);
-                } else {
-                    eprintln!("{} doesn't match {} & {} doesn't match {}", updated_at, ts, change, description);
-                }
-            }
-        }
+        let doc_versions = extractor.doc_versions().context("loading doc versions")?;
+        let max = doc_versions
+            .iter()
+            .flat_map(|(url, content)| {
+                let url = url.clone();
+                content
+                    .history()
+                    .map(move |(updated_at, description)| (url.clone(), updated_at, description))
+            })
+            .max_by_key(match_score)
+            .context("No history found")?;
+        let score = match_score(&max);
         ensure!(
-            matching_urls.len() == 1,
-            "Require exactly one document matching the commit update, found : {:?}",
-            &matching_urls
+            doc_versions
+                .iter()
+                .flat_map(|(url, content)| {
+                    let url = url.clone();
+                    let max = &max;
+                    content.history().filter_map(move |(updated_at, description)| {
+                        let url = url.clone();
+                        if match_score(&(url.clone(), updated_at, description.clone())) == score
+                            && max != &(url.clone(), updated_at, description.clone())
+                        {
+                            Some((url, updated_at, description))
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .count()
+                == 0,
+            "More than one update in commit with the score {}",
+            score
         );
-        Ok(matching_urls.pop().unwrap())
+        let (url, updated_at, _) = max;
+        Ok((url.clone(), updated_at))
     })?;
     let (_tag, _events) = tag_repo.tag_update(tag.to_owned(), (url, ts).into())?;
     Ok(())

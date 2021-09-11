@@ -28,7 +28,7 @@ impl fmt::Display for Update {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct UpdateRef {
     pub url: Url,
     pub timestamp: DateTime<Utc>,

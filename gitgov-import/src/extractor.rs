@@ -1,7 +1,7 @@
 use std::{io, iter::empty, str::FromStr};
 
-use anyhow::{bail, Context, Result};
-use chrono::{DateTime, FixedOffset, TimeZone, Utc};
+use anyhow::{Context, Result, bail, ensure};
+use chrono::{DateTime, FixedOffset, TimeZone, Timelike, Utc};
 use git2::{Blob, Commit, Diff, Oid};
 use html5ever::serialize::{HtmlSerializer, Serialize, SerializeOpts, Serializer, TraversalScope};
 use io::Write;
@@ -68,6 +68,53 @@ impl<'r> Extractor<'r> {
             v.push((url, content));
         }
         Ok(v)
+    }
+
+    pub fn main_doc_version(&self) -> Result<(Url, DateTime<Utc>)> {
+        let ts = self.updated_at()?;
+        let change = self.message()?;
+        let match_score = |(_, updated_at, description): &(_, DateTime<Utc>, String)| {
+            (updated_at.with_second(0).unwrap() == ts) as u8 + (change == *description) as u8
+        };
+    
+        self.url().map(|url| (url, ts)).or_else(|_err| {
+            let doc_versions = self.doc_versions().context("loading doc versions")?;
+            let max = doc_versions
+                .iter()
+                .flat_map(|(url, content)| {
+                    let url = url.clone();
+                    content
+                        .history()
+                        .map(move |(updated_at, description)| (url.clone(), updated_at, description))
+                })
+                .max_by_key(match_score)
+                .context("No history found")?;
+            let score = match_score(&max);
+            ensure!(
+                doc_versions
+                    .iter()
+                    .flat_map(|(url, content)| {
+                        let url = url.clone();
+                        let max = &max;
+                        content.history().filter_map(move |(updated_at, description)| {
+                            let url = url.clone();
+                            if match_score(&(url.clone(), updated_at, description.clone())) == score
+                                && max != &(url.clone(), updated_at, description.clone())
+                            {
+                                Some((url, updated_at, description))
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .count()
+                    == 0,
+                "More than one update in commit with the score {}",
+                score
+            );
+            let (url, updated_at, _) = max;
+            Ok((url.clone(), updated_at))
+        })
     }
 
     pub fn url(&self) -> Result<Url> {

@@ -1,12 +1,10 @@
-use std::{collections::{BTreeMap, BTreeSet}, convert::TryInto, env::{args}, error::Error, io::{BufReader, Read}};
+use std::{collections::{BTreeMap, BTreeSet}, convert::TryInto, env::{args}, io::{BufReader, Read}};
+use anyhow::*;
 
-use update_tracker::{
-    doc::{iter_history, DocRepo},
-    tag::{Tag, TagRepo},
-    update::UpdateRef,
-};
+use chrono::{DateTime, Utc};
+use update_tracker::{doc::{DocRepo, DocumentVersion, iter_history}, tag::{Tag, TagRepo}, update::UpdateRef};
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     let selected_tag = Tag::new(args().nth(1).unwrap());
     println!("Searching tag {}", &selected_tag);
 
@@ -24,19 +22,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     //     println!("{}: {} {}", tag, url, ts);
     // }
 
+    println!("Parsing updates from all documents for update index");
     let repo = DocRepo::new("gitgov-import/out/doc")?;
-    let mut update_index = BTreeMap::new();
+    let mut update_index = UpdateIndex::new();
     let mut doc_count = 0;
     for doc in repo.list_all(&"https://www.gov.uk/".try_into()?)? {
         let doc = doc?;
-        let mut buf = String::new();
-        assert!(BufReader::new(repo.open(&doc)?).read_to_string(&mut buf)? > 0);
-        let html = scraper::Html::parse_fragment(&buf);
-        for (ts, comment) in iter_history(&html) {
-            update_index
-                .entry(UpdateRef::from((doc.url().clone(), ts)))
-                .and_modify(|c| assert!(c == &comment, "{:?} != {:?}", c, &comment))
-                .or_insert(comment);
+        if doc.url().path().ends_with(".html") {
+            let mut buf = String::new();
+            assert!(BufReader::new(repo.open(&doc).with_context(|| format!("opening contents of {}", &doc))?).read_to_string(&mut buf).with_context(|| format!("reading contents of {}", &doc))? > 0);
+            let html = scraper::Html::parse_fragment(&buf);
+            for (ts, comment) in iter_history(&html) {
+                update_index.insert(&doc, ts, comment)
+                    
+            }
         }
         doc_count += 1;
     }
@@ -48,10 +47,36 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{}: {}", &update.timestamp, &update.url);
         if let Some(comment) = update_index.get(update) {
             println!("\t{}", comment);
-        } else {
-            let before_update: UpdateRef = (update.url.clone(), update.timestamp - chrono::Duration::days(1)).into();
-            println!("\t{:?}", update_index.range(before_update..).take(1).collect::<Vec<_>>())
         }
     }
     Ok(())
+}
+
+struct UpdateIndex(BTreeMap<UpdateRef, String>);
+
+impl UpdateIndex {
+    fn new() -> UpdateIndex {
+        UpdateIndex(BTreeMap::new())
+    }
+
+    fn insert(&mut self, doc: &DocumentVersion, ts: DateTime<Utc>, comment: String) {
+        self.0.entry(UpdateRef::from((doc.url().clone(), ts)))
+            .and_modify(|c| assert!(c == &comment, "{:?} != {:?}", c, &comment))
+            .or_insert(comment);
+    }
+
+    fn get(&self, update: &UpdateRef) -> Option<&str> {
+        println!("{}: {}", &update.timestamp, &update.url);
+        let before_update: UpdateRef = (update.url.clone(), update.timestamp - chrono::Duration::days(1)).into();
+        if let Some((indexed_update, comment)) = self.0.range(before_update.clone()..).next() {
+            assert!(indexed_update == update, "expected {} instead of {}", &update, &indexed_update);
+            Some(comment)
+        } else {
+            None
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
 }

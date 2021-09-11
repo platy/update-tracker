@@ -5,11 +5,11 @@ authors = ["Mike Bush <platy@njk.onl>"]
 edition = "2018"
 
 [dependencies]
+update-tracker = { path = ".." }
 
 git2 = { version = "0.13.12", default-features = false, features = ["ssh"] }
 anyhow = "1.0.33"
 dotenv = "0.15.0"
-update-tracker = { path = ".." }
 url = "2.2.0"
 chrono = "0.4.19"
 html-diff = "0.0.6"

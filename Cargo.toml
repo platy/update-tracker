@@ -5,6 +5,7 @@ authors = ["Mike Bush <platy@njk.onl>"]
 edition = "2018"
 
 [dependencies]
+anyhow = "1.0.40"
 chrono = "0.4.19"
 lazy_static = "1.4.0"
 scraper = "0.12.0"

@@ -200,7 +200,6 @@ impl<'r> Iterator for IterDocs<'r> {
 mod test {
     use std::{
         io::Read,
-        str::FromStr,
         thread::{self},
         time,
     };
@@ -298,7 +297,7 @@ mod test {
     fn test_repo(name: &str) -> DocRepo {
         let path = format!("tmp/{}", name);
         let _ = fs::remove_dir_all(&path);
-        let repo = DocRepo::new(path, Url::from_str("http://example.com").unwrap()).unwrap();
+        let repo = DocRepo::new(path).unwrap();
         repo
     }
 }

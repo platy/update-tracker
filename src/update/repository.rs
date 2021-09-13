@@ -101,7 +101,7 @@ impl UpdateRepo {
 
     /// Returns error if there is no update
     pub fn latest(&self, url: &Url) -> io::Result<DateTime<Utc>> {
-        let dir = fs::read_dir(self.path_for(&url, None))?;
+        let dir = fs::read_dir(self.path_for(url, None))?;
         let mut latest = None;
         for entry in dir {
             let entry = entry?;

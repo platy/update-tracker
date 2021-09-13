@@ -1483,6 +1483,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "clap",
  "lazy_static 1.4.0",
  "scraper",
  "url",

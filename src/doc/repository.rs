@@ -183,10 +183,7 @@ impl<'r> Iterator for IterDocs<'r> {
                             .map_err(|error| io::Error::new(io::ErrorKind::Other, error))
                             .unwrap();
                         let url = self.url.clone();
-                        break Some(Ok(DocumentVersion {
-                            url,
-                            timestamp,
-                        }));
+                        break Some(Ok(DocumentVersion { url, timestamp }));
                     } else {
                         panic!("symlink in repo");
                     }

@@ -1,10 +1,13 @@
-use std::{fs::remove_dir_all, io, str::from_utf8};
+use std::{
+    fs::remove_dir_all,
+    io::{self, Read, Write},
+    str::from_utf8,
+};
 
 use anyhow::{ensure, format_err, Context, Result};
 use chrono::Timelike;
 use extractor::Extractor;
 use git2::Repository;
-use io::{Read, Write};
 use update_tracker::{doc::DocRepo, tag::TagRepo, update::UpdateRepo};
 
 mod extractor;
@@ -26,14 +29,17 @@ fn main() -> Result<()> {
     let mut update_repo = UpdateRepo::new(UPDATE_REPO_BASE)?;
 
     let mut update_imports_skipped = 0;
+    let mut deleted_docs_skipped = 0;
     let mut docs_imported = 0;
     let mut updates_imported = 0;
 
     loop {
         if commit.author().email().unwrap() == "info@gov.uk" {
             let extractor = Extractor::new(&repo, &commit);
-            docs_imported += import_docs_from_commit(&extractor, &mut doc_repo)
+            let (doc_count, skipped_deleted) = import_docs_from_commit(&extractor, &mut doc_repo)
                 .context(format!("Importing docs from {}", commit.id()))?;
+            docs_imported += doc_count;
+            deleted_docs_skipped += skipped_deleted;
             if let Err(e) = import_update_from_commit(&extractor, &mut tag_repo, &mut update_repo)
                 .context(format!("Importing tag from {}", commit.id()))
             {
@@ -46,6 +52,12 @@ fn main() -> Result<()> {
             println!("Non-update commit : {}", commit.message().unwrap());
         }
 
+        print!(
+            "Imported: {} docs, {} updates. {} skipped updates. {} deleted docs\r",
+            docs_imported, updates_imported, update_imports_skipped, deleted_docs_skipped
+        );
+        io::stdout().flush().unwrap();
+
         if let Some(parent) = commit.parents().next() {
             commit = parent;
         } else {
@@ -55,6 +67,7 @@ fn main() -> Result<()> {
     println!("{} docs imported", docs_imported);
     println!("{} updates imported", updates_imported);
     println!("{} errors importing updates", update_imports_skipped);
+    println!("{} deleted docs skipped", deleted_docs_skipped);
 
     Ok(())
 }
@@ -89,15 +102,15 @@ fn import_update_from_commit(
     Ok(())
 }
 
-fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Result<u32> {
+fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Result<(u32, u32)> {
     let mut count = 0;
     let ts = extractor.retrieved_at();
-    for (url, content) in extractor.doc_versions().context("loading doc versions")? {
+    let (doc_versions, skip_deleted) = extractor.doc_versions().context("loading doc versions")?;
+    for (url, content) in doc_versions {
         match doc_repo.create(url.clone(), ts) {
             Ok(mut writer) => {
                 writer.write_all(content.as_bytes())?;
-                let (update, _events) = writer.done()?;
-                // println!("create {}", &update);
+                let (_update, _events) = writer.done()?;
                 count += 1;
                 Ok(())
             }
@@ -121,5 +134,5 @@ fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Res
             Err(err) => Err(err).context("error writing update"),
         }?;
     }
-    Ok(count)
+    Ok((count, skip_deleted))
 }

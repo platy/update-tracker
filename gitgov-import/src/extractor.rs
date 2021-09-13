@@ -25,16 +25,16 @@ impl<'r> Extractor<'r> {
         Ok(self.repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None)?)
     }
 
-    pub fn doc_versions(&self) -> Result<Vec<(Url, DocExtractor<'_>)>> {
+    /// Extracts the documents contained in this commit as well as a count of skipped deleted files
+    pub fn doc_versions(&self) -> Result<(Vec<(Url, DocExtractor<'_>)>, u32)> {
+        let mut skip_delete = 0;
         let mut v = vec![];
         for diff in self.diff()?.deltas() {
             let file = diff.new_file();
             let path = file.path().unwrap().to_owned();
             if file.id() == Oid::zero() {
-                eprintln!(
-                    "Deleted file means nothing, it was due to a couple of bugs (old version of fetcher recorded files with the url they were retrieved from which means conflicts between files and directories & new fetcher would overwrite those files with a directory) : {:?}",
-                    path
-                );
+                // Deleted file means nothing, it was due to a couple of bugs (old version of fetcher recorded files with the url they were retrieved from which means conflicts between files and directories & new fetcher would overwrite those files with a directory)
+                skip_delete += 1;
                 continue;
             }
             let blob =
@@ -70,7 +70,7 @@ impl<'r> Extractor<'r> {
             let url = Url::from_str(&format!("https://www.gov.uk/{}", path.to_str().unwrap()))?;
             v.push((url, content));
         }
-        Ok(v)
+        Ok((v, skip_delete))
     }
 
     pub fn main_doc_version(&self) -> Result<(Url, DateTime<Utc>)> {
@@ -81,13 +81,12 @@ impl<'r> Extractor<'r> {
         };
 
         // easy path if there is only one doc in the commit
-        let single_url_err = match self.url() {
-            Ok(url) => return Ok((url, ts)),
-            Err(err) => err,
-        };
+        if let Ok(url) = self.url() {
+            return Ok((url, ts));
+        }
 
         // if the docs have history, find the one that matches
-        let doc_versions = self.doc_versions().context("loading doc versions")?;
+        let (doc_versions, _) = self.doc_versions().context("loading doc versions")?;
         ensure!(
             !doc_versions.is_empty(),
             "No doc updates in commit {}",

@@ -1,6 +1,6 @@
 use std::{io, iter::empty, str::FromStr};
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{bail, ensure, Context, Result};
 use chrono::{DateTime, FixedOffset, TimeZone, Timelike, Utc};
 use git2::{Blob, Commit, Diff, Oid};
 use html5ever::serialize::{HtmlSerializer, Serialize, SerializeOpts, Serializer, TraversalScope};
@@ -49,6 +49,9 @@ impl<'r> Extractor<'r> {
                     .context("failed attempting to detect filetype of blob without extension")?;
                 if content.trim_start().starts_with('<') {
                     true
+                } else if content == "connection failure" {
+                    // single error case
+                    false
                 } else {
                     bail!(
                         "Couldn't infer extension for file {:?}, starting with content {}..",
@@ -76,19 +79,30 @@ impl<'r> Extractor<'r> {
         let match_score = |(_, updated_at, description): &(_, DateTime<Utc>, String)| {
             (updated_at.with_second(0).unwrap() == ts) as u8 + (change == *description) as u8
         };
-    
-        self.url().map(|url| (url, ts)).or_else(|_err| {
-            let doc_versions = self.doc_versions().context("loading doc versions")?;
-            let max = doc_versions
-                .iter()
-                .flat_map(|(url, content)| {
-                    let url = url.clone();
-                    content
-                        .history()
-                        .map(move |(updated_at, description)| (url.clone(), updated_at, description))
-                })
-                .max_by_key(match_score)
-                .context("No history found")?;
+
+        // easy path if there is only one doc in the commit
+        let single_url_err = match self.url() {
+            Ok(url) => return Ok((url, ts)),
+            Err(err) => err,
+        };
+
+        // if the docs have history, find the one that matches
+        let doc_versions = self.doc_versions().context("loading doc versions")?;
+        ensure!(
+            !doc_versions.is_empty(),
+            "No doc updates in commit {}",
+            self.commit.id()
+        );
+        if let Some(max) = doc_versions
+            .iter()
+            .flat_map(|(url, content)| {
+                let url = url.clone();
+                content
+                    .history()
+                    .map(move |(updated_at, description)| (url.clone(), updated_at, description))
+            })
+            .max_by_key(match_score)
+        {
             let score = match_score(&max);
             ensure!(
                 doc_versions
@@ -113,10 +127,32 @@ impl<'r> Extractor<'r> {
                 score
             );
             let (url, updated_at, _) = max;
-            Ok((url.clone(), updated_at))
-        })
+            return Ok((url, updated_at));
+        }
+
+        // if one doc is a parent to all the others
+        let (shortest_doc_url, _) = doc_versions
+            .iter()
+            .min_by_key(|dv| dv.0.path_segments().map_or(0, Iterator::count))
+            .unwrap();
+        let shortest_doc_path = shortest_doc_url.path();
+        let shortest_doc_path = shortest_doc_path.strip_suffix(".html").unwrap_or(shortest_doc_path);
+        if doc_versions
+            .iter()
+            .filter(|(url, _)| url != shortest_doc_url)
+            .all(|(url, _)| url.path().starts_with(shortest_doc_path))
+        {
+            return Ok((shortest_doc_url.clone(), ts));
+        }
+
+        bail!(
+            "No history found in commit {} for docs {:?}",
+            self.commit.id(),
+            doc_versions.iter().map(|(url, _)| url.to_string()).collect::<Vec<_>>()
+        );
     }
 
+    /// Gets the url of the changed file, if there is only one
     pub fn url(&self) -> Result<Url> {
         let diff = self.diff()?;
         let files: Vec<_> = diff.deltas().collect();

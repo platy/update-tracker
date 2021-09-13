@@ -54,6 +54,51 @@ impl UpdateRepo {
         Ok((update, events))
     }
 
+    pub fn ensure(
+        &self,
+        url: Url,
+        timestamp: DateTime<Utc>,
+        change: &str,
+    ) -> io::Result<(Update, impl Iterator<Item = UpdateEvent>)> {
+        let path = self.path_for(&url, Some(&timestamp));
+        let update = Update {
+            url,
+            timestamp,
+            change: change.to_owned(),
+        };
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        if let Ok(mut file) = fs::OpenOptions::new().read(true).open(&path) {
+            let mut contents = String::new();
+            file.read_to_string(&mut contents)?;
+            if change == contents {
+                return Ok((update, vec![].into_iter()));
+            }
+        }
+
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
+        file.write_all(update.change.as_bytes())?;
+        file.flush()?;
+
+        let added_event = UpdateEvent::Added {
+            url: update.url.clone(),
+            timestamp,
+        };
+        let events = if self.latest(&update.url)? == timestamp {
+            vec![
+                added_event,
+                UpdateEvent::New {
+                    url: update.url.clone(),
+                    timestamp,
+                },
+            ]
+        } else {
+            vec![added_event]
+        };
+        Ok((update, events.into_iter()))
+    }
+
     /// Returns error if there is no update
     pub fn latest(&self, url: &Url) -> io::Result<DateTime<Utc>> {
         let dir = fs::read_dir(self.path_for(&url, None))?;
@@ -205,6 +250,121 @@ mod test {
                 }
             ]
         );
+    }
+
+    #[test]
+    fn old_update_ensure_creates_events_and_becomes_available() {
+        let repo = test_repo("old_update_ensure_creates_events_and_becomes_available");
+        let url: Url = "http://www.example.org/test/doc".parse().unwrap();
+        let timestamp = Utc::now() - chrono::Duration::minutes(60);
+        let change = "older change";
+        let should = Update {
+            url: url.clone(),
+            timestamp,
+            change: change.to_owned(),
+        };
+
+        let (_, events) = repo.ensure(url.clone(), Utc::now(), "newest change").unwrap();
+        thread::sleep(time::Duration::from_millis(1));
+        assert_eq!(events.count(), 2);
+
+        let (update, events) = repo.ensure(url.clone(), timestamp, change).unwrap();
+        assert_eq!(update, should);
+
+        let update: Update = repo.get_update(url.clone(), timestamp).unwrap();
+        assert_eq!(update, should);
+
+        let mut list = repo.list_updates(url.clone()).unwrap();
+        let update = list.next().unwrap().unwrap();
+        assert_eq!(update.change, "newest change");
+        let update = list.next().unwrap().unwrap();
+        assert_eq!(update, should);
+
+        thread::sleep(time::Duration::from_millis(1));
+        assert_eq!(
+            events.collect::<Vec<_>>(),
+            [UpdateEvent::Added {
+                url: url.clone(),
+                timestamp
+            }]
+        );
+    }
+
+    #[test]
+    fn newer_update_ensure_creates_event_and_becomes_available() {
+        let repo = test_repo("newer_update_ensure_creates_event_and_becomes_available");
+        let url: Url = "http://www.example.org/test/doc".parse().unwrap();
+        let change = "new change";
+        let timestamp = Utc::now();
+        let should = Update {
+            url: url.clone(),
+            timestamp,
+            change: change.to_owned(),
+        };
+
+        let (_, events) = repo
+            .ensure(url.clone(), Utc::now() - chrono::Duration::minutes(60), "old change")
+            .unwrap();
+        thread::sleep(time::Duration::from_millis(1));
+        assert_eq!(events.count(), 2);
+
+        let (update, events) = repo.ensure(url.clone(), timestamp, change).unwrap();
+        assert_eq!(update, should);
+
+        let update: Update = repo.get_update(url.clone(), timestamp).unwrap();
+        assert_eq!(update, should);
+
+        let mut list = repo.list_updates(url.clone()).unwrap();
+        let update = list.next().unwrap().unwrap();
+        assert_eq!(update, should);
+        let update = list.next().unwrap().unwrap();
+        assert_eq!(update.change, "old change");
+
+        thread::sleep(time::Duration::from_millis(1));
+        assert_eq!(
+            events.collect::<Vec<_>>(),
+            [
+                UpdateEvent::Added {
+                    url: url.clone(),
+                    timestamp
+                },
+                UpdateEvent::New {
+                    url: url.clone(),
+                    timestamp
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn existing_update_ensure_is_noop() {
+        let repo = test_repo("existing_update_ensure_is_noop");
+        let url: Url = "http://www.example.org/test/doc".parse().unwrap();
+        let change = "existing change";
+        let timestamp = Utc::now();
+        let should = Update {
+            url: url.clone(),
+            timestamp,
+            change: change.to_owned(),
+        };
+
+        let (_, events) = repo.ensure(url.clone(), timestamp, change).unwrap();
+        thread::sleep(time::Duration::from_millis(1));
+        assert_eq!(events.count(), 2);
+
+        let (update, events) = repo.ensure(url.clone(), timestamp, change).unwrap();
+        assert_eq!(update, should);
+
+        let update: Update = repo.get_update(url.clone(), timestamp).unwrap();
+        assert_eq!(update, should);
+
+        let mut list = repo.list_updates(url.clone()).unwrap();
+        let update = list.next().unwrap().unwrap();
+        assert_eq!(update, should);
+        assert!(list.next().is_none());
+
+        thread::sleep(time::Duration::from_millis(1));
+        assert_eq!(events.count(), 0);
     }
 
     fn test_repo(name: &str) -> UpdateRepo {

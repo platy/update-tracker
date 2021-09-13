@@ -1,6 +1,7 @@
 use std::{fs::remove_dir_all, io, str::from_utf8};
 
 use anyhow::{ensure, format_err, Context, Result};
+use chrono::Timelike;
 use extractor::Extractor;
 use git2::Repository;
 use io::{Read, Write};
@@ -24,16 +25,22 @@ fn main() -> Result<()> {
     let mut tag_repo = TagRepo::new(TAG_REPO_BASE)?;
     let mut update_repo = UpdateRepo::new(UPDATE_REPO_BASE)?;
 
-    let mut tag_imports_skipped = 0;
+    let mut update_imports_skipped = 0;
+    let mut docs_imported = 0;
+    let mut updates_imported = 0;
 
     loop {
         if commit.author().email().unwrap() == "info@gov.uk" {
             let extractor = Extractor::new(&repo, &commit);
-            import_docs_from_commit(&extractor, &mut doc_repo)
+            docs_imported += import_docs_from_commit(&extractor, &mut doc_repo)
                 .context(format!("Importing docs from {}", commit.id()))?;
-            if let Err(e) = import_tag_from_commit(&extractor, &mut tag_repo, &mut update_repo).context(format!("Importing tag from {}", commit.id())) {
+            if let Err(e) = import_update_from_commit(&extractor, &mut tag_repo, &mut update_repo)
+                .context(format!("Importing tag from {}", commit.id()))
+            {
                 println!("Error importing tag : {:? }", e);
-                tag_imports_skipped += 1;
+                update_imports_skipped += 1;
+            } else {
+                updates_imported += 1;
             }
         } else {
             println!("Non-update commit : {}", commit.message().unwrap());
@@ -45,34 +52,53 @@ fn main() -> Result<()> {
             break;
         }
     }
-    println!("{} errors importing tags", tag_imports_skipped);
+    println!("{} docs imported", docs_imported);
+    println!("{} updates imported", updates_imported);
+    println!("{} errors importing updates", update_imports_skipped);
 
     Ok(())
 }
 
-/// INPRROGESS Import a tag into the tag repo from the commit. If the commit only has one file it is easy, but if it has more, we need to find which of the files matches the update in the commit
-fn import_tag_from_commit(extractor: &Extractor, tag_repo: &mut TagRepo, update_repo: &mut UpdateRepo) -> Result<()> {
+/// Import a tag into the tag repo from the commit. If the commit only has one file it is easy, but if it has more, we need to find which of the files matches the update in the commit
+fn import_update_from_commit(
+    extractor: &Extractor,
+    tag_repo: &mut TagRepo,
+    update_repo: &mut UpdateRepo,
+) -> Result<()> {
     let ts1 = extractor.updated_at()?;
     let change = extractor.message()?;
     let tag = extractor.tag().unwrap_or("Unknown");
 
-    let (url, ts2) = extractor.main_doc_version()?;
+    let (url, ts2) = extractor
+        .main_doc_version()
+        .context("Finding the main doc version in the update")?;
 
-    ensure!(ts1 == ts2);
+    ensure!(
+        ts1 == ts2.with_second(0).unwrap(),
+        "expected {} == {}",
+        ts1,
+        ts2.with_second(0).unwrap()
+    );
 
-    let (_tag, _events) = tag_repo.tag_update(tag.to_owned(), (url.clone(), ts2).into())?;
-    let (_update, _events) = update_repo.create(url, ts2, &change)?;
+    let (_tag, _events) = tag_repo
+        .tag_update(tag.to_owned(), (url.clone(), ts2).into())
+        .context("Tagging update in repo")?;
+    let (_update, _events) = update_repo
+        .ensure(url, ts2, &change)
+        .context("Creating update in repo")?;
     Ok(())
 }
 
-fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Result<()> {
+fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Result<u32> {
+    let mut count = 0;
     let ts = extractor.retrieved_at();
     for (url, content) in extractor.doc_versions().context("loading doc versions")? {
         match doc_repo.create(url.clone(), ts) {
             Ok(mut writer) => {
                 writer.write_all(content.as_bytes())?;
                 let (update, _events) = writer.done()?;
-                println!("create {}", &update);
+                // println!("create {}", &update);
+                count += 1;
                 Ok(())
             }
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
@@ -95,5 +121,5 @@ fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Res
             Err(err) => Err(err).context("error writing update"),
         }?;
     }
-    Ok(())
+    Ok(count)
 }

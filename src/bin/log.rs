@@ -1,6 +1,7 @@
 use anyhow::*;
 use clap::clap_app;
 use std::{collections::BTreeSet, convert::TryFrom};
+use url::Url;
 
 use update_tracker::{
     tag::{Tag, TagRepo},
@@ -25,7 +26,14 @@ fn main() -> Result<()> {
     let update_repo = UpdateRepo::new("gitgov-import/out/update")?;
 
     if let Some(tag) = filter.tags.pop() {
-        let mut updates: BTreeSet<UpdateRef> = tag_repo.list_updates_in_tag(&tag)?.collect::<Result<_, _>>()?;
+        let mut updates: BTreeSet<UpdateRef> = tag_repo
+            .list_updates_in_tag(&tag)?
+            .filter(|update_ref| {
+                update_ref
+                    .as_ref()
+                    .map_or(true, |update_ref| filter.filter_update_ref(&update_ref))
+            })
+            .collect::<Result<_, _>>()?;
         while let Some(tag) = filter.tags.pop() {
             let mut tmp_updates: BTreeSet<_> = Default::default();
             for update in tag_repo.list_updates_in_tag(&tag)? {
@@ -48,7 +56,10 @@ fn main() -> Result<()> {
 
 #[derive(Debug)]
 struct Filter {
+    /// Filter to only updates with the intersection of these tags
     tags: Vec<Tag>,
+    /// Filter to only updates on urls starting with this url prefix
+    url_prefix: Option<Url>,
 }
 
 impl<'s> TryFrom<Option<clap::Values<'s>>> for Filter {
@@ -56,18 +67,33 @@ impl<'s> TryFrom<Option<clap::Values<'s>>> for Filter {
 
     fn try_from(values: Option<clap::Values<'s>>) -> Result<Self, Self::Error> {
         let mut tags = vec![];
+        let mut url_prefix = None;
         if let Some(values) = values {
-            for mut token in values {
-                if token.starts_with("#\"") {
+            for token in values {
+                if let Some(mut tag) = token.strip_prefix("#\"") {
                     // tag until next double quote
-                    token = &token[2..(2 + token[2..].find('"').context("Missing matching double quote")?)];
-                } else if token.starts_with('#') {
+                    tag = &tag[..(2 + tag
+                        .find('"')
+                        .context(format!("Missing matching double quote on '{}'", tag))?)];
+                    tags.push(Tag::new(tag.to_owned()));
+                } else if let Some(tag) = token.strip_prefix('#') {
                     // tag until next whitespace
-                    token = &token[1..];
+                    tags.push(Tag::new(tag.to_owned()));
+                } else if token.starts_with("https://www.gov.uk/") {
+                    url_prefix = Some(token.parse()?);
                 }
-                tags.push(Tag::new(token.to_owned()));
             }
         }
-        Ok(Filter { tags })
+        Ok(Filter { tags, url_prefix })
+    }
+}
+impl Filter {
+    pub(crate) fn filter_update_ref(&self, update_ref: &UpdateRef) -> bool {
+        if let Some(url_prefix) = &self.url_prefix {
+            if !update_ref.to_string().starts_with(&url_prefix.to_string()) {
+                return false;
+            }
+        }
+        true
     }
 }

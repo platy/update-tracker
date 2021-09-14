@@ -1,5 +1,5 @@
 use anyhow::*;
-use chrono::{Datelike, NaiveDate, NaiveDateTime};
+use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Utc};
 use clap::clap_app;
 use std::{
     collections::BTreeSet,
@@ -67,6 +67,8 @@ struct Filter {
     url_prefix: Option<Url>,
     /// Filter to only updates published within a date range
     date_range: (Bound<NaiveDateTime>, Bound<NaiveDateTime>),
+    /// Filter by age
+    age_range: (Bound<Duration>, Bound<Duration>),
 }
 
 impl<'s> TryFrom<Option<clap::Values<'s>>> for Filter {
@@ -76,6 +78,7 @@ impl<'s> TryFrom<Option<clap::Values<'s>>> for Filter {
         let mut tags = vec![];
         let mut url_prefix = None;
         let mut date_range = (Bound::Unbounded, Bound::Unbounded);
+        let mut age_range = (Bound::Unbounded, Bound::Unbounded);
         if let Some(values) = values {
             for token in values {
                 if let Some(mut tag) = token.strip_prefix("#\"") {
@@ -89,6 +92,11 @@ impl<'s> TryFrom<Option<clap::Values<'s>>> for Filter {
                     tags.push(Tag::new(tag.to_owned()));
                 } else if token.starts_with("https://www.gov.uk/") {
                     url_prefix = Some(token.parse()?);
+                } else if let Some((from, to)) = token.split_once("...") {
+                    age_range = (
+                        Filter::parse_age_bound(to)?.map_or(Bound::Unbounded, Bound::Included),
+                        Filter::parse_age_bound(from)?.map_or(Bound::Unbounded, Bound::Excluded),
+                    );
                 } else if let Some((from, to)) = token.split_once("..") {
                     date_range = (
                         Filter::parse_date_bound(from)?.map_or(Bound::Unbounded, Bound::Included),
@@ -103,6 +111,7 @@ impl<'s> TryFrom<Option<clap::Values<'s>>> for Filter {
             tags,
             url_prefix,
             date_range,
+            age_range,
         })
     }
 }
@@ -115,6 +124,7 @@ impl Filter {
             }
         }
         self.date_range.contains(&update_ref.timestamp.naive_local())
+            && self.age_range.contains(&(Utc::now() - update_ref.timestamp))
     }
 
     fn parse_date_bound(s: &str) -> Result<Option<NaiveDateTime>> {
@@ -133,5 +143,36 @@ impl Filter {
             date = date.with_day(d).context("Error parsing day")?;
         }
         Ok(Some(date.and_hms(0, 0, 0)))
+    }
+
+    fn parse_age_bound(mut s: &str) -> Result<Option<Duration>> {
+        if s.is_empty() {
+            return Ok(None);
+        }
+        let mut duration = Duration::seconds(0);
+        while !s.is_empty() {
+            // this panics
+            let (multiple, rest) = s.split_at(s.chars().take_while(|&c| c.is_numeric()).count());
+            let (unit, rest) = rest.split_at(rest.chars().take_while(|&c| c.is_alphanumeric()).count());
+            match unit.to_lowercase().as_str() {
+                "y" | "year" | "years" => {
+                    duration =
+                        duration + Duration::weeks(53 * multiple.parse::<i64>().context("Failed to parse number")?)
+                }
+                "m" | "month" | "months" => {
+                    duration =
+                        duration + Duration::days(30 * multiple.parse::<i64>().context("Failed to parse number")?)
+                }
+                "w" | "week" | "weeks" => {
+                    duration = duration + Duration::weeks(multiple.parse::<i64>().context("Failed to parse number")?)
+                }
+                "d" | "day" | "days" => {
+                    duration = duration + Duration::days(multiple.parse::<i64>().context("Failed to parse number")?)
+                }
+                other => bail!("Unknown age unit {}", other),
+            }
+            s = rest;
+        }
+        Ok(Some(duration))
     }
 }

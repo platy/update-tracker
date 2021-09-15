@@ -6,7 +6,6 @@ use std::{
     convert::TryFrom,
     ops::{Bound, RangeBounds},
 };
-use url::Url;
 
 use update_tracker::{
     tag::{Tag, TagRepo},
@@ -78,7 +77,7 @@ struct Filter {
     /// Filter to only updates with the intersection of these tags
     tags: Vec<Tag>,
     /// Filter to only updates on urls starting with this url prefix
-    url_prefix: Option<Url>,
+    url_prefix: Option<url::Url>,
     /// Filter to only updates published within a date range
     date_range: (Bound<NaiveDateTime>, Bound<NaiveDateTime>),
     /// Filter by age
@@ -133,7 +132,7 @@ impl<'s> TryFrom<Option<clap::Values<'s>>> for Filter {
 impl Filter {
     fn filter_update_ref(&self, update_ref: &UpdateRef) -> bool {
         if let Some(url_prefix) = &self.url_prefix {
-            if !update_ref.to_string().starts_with(&url_prefix.to_string()) {
+            if !update_ref.url.as_str().starts_with(url_prefix.as_str()) {
                 return false;
             }
         }

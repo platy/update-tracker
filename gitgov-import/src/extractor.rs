@@ -240,7 +240,7 @@ impl<'r> DocExtractor<'r> {
 
     pub fn as_str(&self) -> &str {
         match self {
-            DocExtractor::Html(_html, string) => &string,
+            DocExtractor::Html(_html, string) => string,
             DocExtractor::Blob(blob) => std::str::from_utf8(blob.content()).expect("Invalid uf8 str"),
         }
     }

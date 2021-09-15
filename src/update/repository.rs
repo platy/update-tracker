@@ -152,8 +152,7 @@ impl UpdateRepo {
     }
 
     fn path_for(&self, url: &Url, timestamp: Option<&DateTime<Utc>>) -> PathBuf {
-        let path = url.path().strip_prefix('/').unwrap_or_else(|| url.path());
-        let path = self.base.join(url.host_str().unwrap_or("local")).join(path);
+        let path = url.to_path(&self.base);
         if let Some(timestamp) = timestamp {
             path.join(timestamp.to_rfc3339())
         } else {

@@ -1,11 +1,10 @@
 use super::*;
 use chrono::{DateTime, Utc};
 use std::{
-    ffi::OsStr,
     fs,
     io::{self, Write},
     iter,
-    path::{self, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
 pub struct DocRepo {
@@ -62,13 +61,7 @@ impl DocRepo {
 
     /// Lists all updates
     pub fn list_all(&self, base_url: &Url) -> io::Result<IterDocs<'_>> {
-        let root_path: PathBuf = self
-            .base
-            .components()
-            .chain(iter::once(path::Component::Normal(OsStr::new(
-                base_url.host_str().unwrap(),
-            ))))
-            .collect();
+        let root_path: PathBuf = base_url.to_path(&self.base);
         Ok(IterDocs {
             repo: self,
             url: base_url.clone(),
@@ -85,16 +78,11 @@ impl DocRepo {
     }
 
     fn path_for_doc(&self, Document { url }: &Document) -> PathBuf {
-        let path = url.path().strip_prefix('/').unwrap_or_else(|| url.path());
-        self.base.join(url.host_str().unwrap_or("local")).join(path)
+        url.to_path(&self.base)
     }
 
     fn path_for_version(&self, DocumentVersion { url, timestamp }: &DocumentVersion) -> PathBuf {
-        let path = url.path().strip_prefix('/').unwrap_or_else(|| url.path());
-        self.base
-            .join(url.host_str().unwrap_or("local"))
-            .join(path)
-            .join(timestamp.to_rfc3339())
+        url.to_path(&self.base).join(timestamp.to_rfc3339())
     }
 }
 
@@ -152,7 +140,7 @@ impl<'r> Iterator for IterDocs<'r> {
                     break entry;
                 } else {
                     self.stack.pop().unwrap();
-                    self.url.path_segments_mut().unwrap().pop();
+                    self.url.pop_path_segment();
                 }
             } else {
                 return None;
@@ -166,10 +154,7 @@ impl<'r> Iterator for IterDocs<'r> {
                 Ok(dir_entry) => {
                     let file_type = dir_entry.file_type().unwrap();
                     if file_type.is_dir() {
-                        self.url
-                            .path_segments_mut()
-                            .unwrap()
-                            .push(dir_entry.file_name().to_str().unwrap());
+                        self.url.push_path_segment(dir_entry.file_name().to_str().unwrap());
                         let mut dir =
                             fs::read_dir(self.repo.path_for_doc(&Document { url: self.url.clone() })).unwrap();
                         next_dir_entry = dir.next().expect("todo: handle empty dir in repo");

@@ -8,25 +8,26 @@ use anyhow::{ensure, format_err, Context, Result};
 use chrono::Timelike;
 use extractor::Extractor;
 use git2::Repository;
-use update_tracker::{doc::DocRepo, tag::TagRepo, update::UpdateRepo};
+use update_tracker::{doc::DocRepo, tag::TagRepo, update::UpdateRepo, Url};
 
 mod extractor;
 
 fn main() -> Result<()> {
-    const TAG_REPO_BASE: &str = "./out/tag";
-    const DOC_REPO_BASE: &str = "./out/doc";
-    const UPDATE_REPO_BASE: &str = "./out/update";
-    let _ = remove_dir_all(TAG_REPO_BASE);
-    let _ = remove_dir_all(DOC_REPO_BASE);
-    let _ = remove_dir_all(UPDATE_REPO_BASE);
+    let base_repo: &str = &dotenv::var("BASE_REPO")?;
+    let tag_repo_base = &format!("{}/tag", base_repo);
+    let doc_repo_base: &str = &format!("{}/doc", base_repo);
+    let update_repo_base: &str = &format!("{}/update", base_repo);
+    let _ = remove_dir_all(tag_repo_base);
+    let _ = remove_dir_all(doc_repo_base);
+    let _ = remove_dir_all(update_repo_base);
 
     let repo = Repository::open(dotenv::var("GITGOV_REPO")?)?;
     let reference = repo.find_reference(&dotenv::var("GITGOV_REF")?)?;
     let mut commit = reference.peel_to_commit()?;
 
-    let mut doc_repo = DocRepo::new(DOC_REPO_BASE)?;
-    let mut tag_repo = TagRepo::new(TAG_REPO_BASE)?;
-    let mut update_repo = UpdateRepo::new(UPDATE_REPO_BASE)?;
+    let mut doc_repo = DocRepo::new(doc_repo_base)?;
+    let mut tag_repo = TagRepo::new(tag_repo_base)?;
+    let mut update_repo = UpdateRepo::new(update_repo_base)?;
 
     let mut update_imports_skipped = 0;
     let mut deleted_docs_skipped = 0;
@@ -85,6 +86,7 @@ fn import_update_from_commit(
     let (url, ts2) = extractor
         .main_doc_version()
         .context("Finding the main doc version in the update")?;
+    let url: Url = url.into();
 
     ensure!(
         ts1 == ts2.with_second(0).unwrap(),
@@ -107,6 +109,7 @@ fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Res
     let ts = extractor.retrieved_at();
     let (doc_versions, skip_deleted) = extractor.doc_versions().context("loading doc versions")?;
     for (url, content) in doc_versions {
+        let url: Url = url.into();
         match doc_repo.create(url.clone(), ts) {
             Ok(mut writer) => {
                 writer.write_all(content.as_bytes())?;

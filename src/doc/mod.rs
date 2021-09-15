@@ -1,8 +1,8 @@
 use std::fmt;
 
+use crate::Url;
 use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
-use url::Url;
 
 mod repository;
 pub use repository::DocRepo;

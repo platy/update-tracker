@@ -28,7 +28,7 @@ impl fmt::Display for Update {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UpdateRef {
     pub url: Url,
     pub timestamp: DateTime<Utc>,
@@ -96,6 +96,62 @@ impl fmt::Display for UpdateRefParseError {
             UpdateRefParseError::UrlParseError(err) => write!(f, "Error parsing url : {}", err),
             UpdateRefParseError::FragmentNotProvided => f.write_str("Timestamp fragment not provided"),
         }
+    }
+}
+
+#[derive(PartialEq, Eq)]
+pub struct UpdateRefByUrl(pub UpdateRef);
+
+impl Ord for UpdateRefByUrl {
+    fn cmp(&self, UpdateRefByUrl(other): &Self) -> std::cmp::Ordering {
+        let UpdateRefByUrl(UpdateRef { url, timestamp }) = self;
+        url.cmp(&other.url).then_with(|| timestamp.cmp(&other.timestamp))
+    }
+}
+
+impl PartialOrd for UpdateRefByUrl {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl From<UpdateRef> for UpdateRefByUrl {
+    fn from(u: UpdateRef) -> Self {
+        UpdateRefByUrl(u)
+    }
+}
+
+impl From<UpdateRefByUrl> for UpdateRef {
+    fn from(UpdateRefByUrl(u): UpdateRefByUrl) -> Self {
+        u
+    }
+}
+
+#[derive(PartialEq, Eq)]
+pub struct UpdateRefByTimestamp(pub UpdateRef);
+
+impl Ord for UpdateRefByTimestamp {
+    fn cmp(&self, UpdateRefByTimestamp(other): &Self) -> std::cmp::Ordering {
+        let UpdateRefByTimestamp(UpdateRef { url, timestamp }) = self;
+        timestamp.cmp(&other.timestamp).then_with(|| url.cmp(&other.url))
+    }
+}
+
+impl PartialOrd for UpdateRefByTimestamp {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl From<UpdateRef> for UpdateRefByTimestamp {
+    fn from(u: UpdateRef) -> Self {
+        UpdateRefByTimestamp(u)
+    }
+}
+
+impl From<UpdateRefByTimestamp> for UpdateRef {
+    fn from(UpdateRefByTimestamp(u): UpdateRefByTimestamp) -> Self {
+        u
     }
 }
 

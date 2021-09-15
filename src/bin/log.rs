@@ -10,7 +10,7 @@ use url::Url;
 
 use update_tracker::{
     tag::{Tag, TagRepo},
-    update::{UpdateRef, UpdateRepo},
+    update::{UpdateRef, UpdateRefByTimestamp, UpdateRefByUrl, UpdateRepo},
 };
 
 fn main() -> Result<()> {
@@ -18,37 +18,51 @@ fn main() -> Result<()> {
         (version: "0.1")
         (author: "Mike Bush <platy@njk.onl>")
         (about: "Lists updates in the update tracker repo")
-        // (@arg CONFIG: -c --config +takes_value "Sets a custom config file")
+        (@arg ORDER: -o --order +takes_value "Orders updates, either [u]rl or [t]imestamp (default)")
         (@arg FILTER: ... "Filter terms which reduce the output")
         // (@arg verbose: -v --verbose "Print test information verbosely")
     )
     .get_matches();
 
-    let mut filter = Filter::try_from(matches.values_of("FILTER"))?;
+    let filter = Filter::try_from(matches.values_of("FILTER"))?;
     eprintln!("Searching {:?}", &filter);
 
+    match matches.value_of("ORDER") {
+        Some("u" | "url") => list_updates::<UpdateRefByUrl>(filter)?,
+        Some("t" | "time" | "timestamp") | None => list_updates::<UpdateRefByTimestamp>(filter)?,
+        Some(other) => bail!("Unknown sort ordering '{}', expected 'url' or 'timestamp'", other),
+    }
+
+    Ok(())
+}
+
+fn list_updates<O>(mut filter: Filter) -> Result<(), Error>
+where
+    O: Ord + From<UpdateRef> + Into<UpdateRef>,
+{
     let tag_repo = TagRepo::new("gitgov-import/out/tag")?;
     let update_repo = UpdateRepo::new("gitgov-import/out/update")?;
-
     if let Some(tag) = filter.tags.pop() {
-        let mut updates: BTreeSet<UpdateRef> = tag_repo
+        let mut updates: BTreeSet<O> = tag_repo
             .list_updates_in_tag(&tag)?
             .filter(|update_ref| {
                 update_ref
                     .as_ref()
                     .map_or(true, |update_ref| filter.filter_update_ref(update_ref))
             })
+            .map(|r| r.map(Into::into))
             .collect::<Result<_, _>>()?;
         while let Some(tag) = filter.tags.pop() {
             let mut tmp_updates: BTreeSet<_> = Default::default();
             for update in tag_repo.list_updates_in_tag(&tag)? {
-                if let Some(update) = updates.take(&update?) {
+                if let Some(update) = updates.take(&update?.into()) {
                     tmp_updates.insert(update);
                 }
             }
             updates = tmp_updates;
         }
         for update in updates {
+            let update: UpdateRef = update.into();
             println!("{}: {}", &update.timestamp, &update.url);
             let comment = update_repo.get_update(update.url.clone(), update.timestamp)?;
             println!("\t{}", comment.change());

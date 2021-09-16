@@ -281,6 +281,68 @@ mod test {
         assert_eq!(events[0], DocEvent::Updated { url, timestamp });
     }
 
+    #[test]
+    fn list_versions() {
+        let repo = test_repo("list_versions");
+
+        let docs = &[
+            ("http://www.example.org/test/doc1", "2021-03-01T10:00:00+00:00", "1"),
+            ("http://www.example.org/test/doc1", "2021-03-01T11:00:00+00:00", "2"),
+            ("http://www.example.org/test/doc1", "2021-03-01T12:00:00+00:00", "3"),
+            ("http://www.example.org/test/doc2", "2021-03-01T11:00:00+00:00", "4"),
+            ("http://www.example.org/test/doc2", "2021-03-01T12:00:00+00:00", "5"),
+        ];
+
+        for (url, timestamp, content) in docs {
+            let mut write = repo.create(url.parse().unwrap(), timestamp.parse().unwrap()).unwrap();
+            write.write_all(content.as_bytes()).unwrap();
+            let _ = write.done().unwrap();
+        }
+
+        let mut buf = Vec::new();
+        let result = repo
+            .list_versions("http://www.example.org/test/doc1".parse().unwrap())
+            .unwrap();
+        for (&(e_url, e_ts, e_content), actual) in docs[0..3].iter().rev().zip(result) {
+            let actual = actual.unwrap();
+            assert_eq!(actual.url().as_str(), e_url);
+            assert_eq!(actual.timestamp.to_rfc3339(), e_ts);
+            buf.clear();
+            repo.open(&actual).unwrap().read_to_end(&mut buf).unwrap();
+            assert_eq!(buf, e_content.as_bytes());
+        }
+    }
+
+    #[test]
+    fn list_all() {
+        let repo = test_repo("list_all");
+
+        let docs = &[
+            ("http://www.example.org/test/doc1", "2021-03-01T10:00:00+00:00", "1"),
+            ("http://www.example.org/test/doc1", "2021-03-01T11:00:00+00:00", "2"),
+            ("http://www.example.org/test/doc1", "2021-03-01T12:00:00+00:00", "3"),
+            ("http://www.example.org/test/doc2", "2021-03-01T11:00:00+00:00", "4"),
+            ("http://www.example.org/test/doc2", "2021-03-01T12:00:00+00:00", "5"),
+        ];
+
+        for (url, timestamp, content) in docs {
+            let mut write = repo.create(url.parse().unwrap(), timestamp.parse().unwrap()).unwrap();
+            write.write_all(content.as_bytes()).unwrap();
+            let _ = write.done().unwrap();
+        }
+
+        let mut buf = Vec::new();
+        let result = repo.list_all(&"http://www.example.org/".parse().unwrap()).unwrap();
+        for (&(e_url, e_ts, e_content), actual) in docs.iter().zip(result) {
+            let actual = actual.unwrap();
+            assert_eq!(actual.url().as_str(), e_url);
+            assert_eq!(actual.timestamp.to_rfc3339(), e_ts);
+            buf.clear();
+            repo.open(&actual).unwrap().read_to_end(&mut buf).unwrap();
+            assert_eq!(buf, e_content.as_bytes());
+        }
+    }
+
     fn test_repo(name: &str) -> DocRepo {
         let path = format!("tmp/{}", name);
         let _ = fs::remove_dir_all(&path);

@@ -1,5 +1,5 @@
 use super::*;
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
 use std::{
     fs,
     io::{self, Write},
@@ -18,7 +18,7 @@ impl DocRepo {
         Ok(Self { base })
     }
 
-    pub fn create(&self, url: Url, timestamp: DateTime<Utc>) -> io::Result<TempDoc> {
+    pub fn create(&self, url: Url, timestamp: DateTime<FixedOffset>) -> io::Result<TempDoc> {
         let doc = DocumentVersion { url, timestamp };
         let path = self.path_for_version(&doc);
         let is_new_doc = !self.document_exists(&doc.url)?;
@@ -33,7 +33,7 @@ impl DocRepo {
         fs::File::open(self.path_for_version(doc_version))
     }
 
-    pub fn ensure_version(&self, url: Url, timestamp: DateTime<Utc>) -> io::Result<DocumentVersion> {
+    pub fn ensure_version(&self, url: Url, timestamp: DateTime<FixedOffset>) -> io::Result<DocumentVersion> {
         let doc_version = DocumentVersion { url, timestamp };
         fs::File::open(self.path_for_version(&doc_version))?;
         Ok(doc_version)
@@ -186,6 +186,8 @@ mod test {
         time,
     };
 
+    use chrono::Utc;
+
     use super::*;
 
     #[test]
@@ -193,7 +195,7 @@ mod test {
         let repo = test_repo("new_doc_creates_events_and_becomes_available");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let doc_content = "test document";
-        let timestamp = Utc::now();
+        let timestamp = Utc::now().into();
         let should = DocumentVersion {
             url: url.clone(),
             timestamp,
@@ -232,7 +234,7 @@ mod test {
         let repo = test_repo("updated_doc_creates_event_and_becomes_available");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let doc_content = "new content";
-        let timestamp = Utc::now();
+        let timestamp = Utc::now().into();
         let should = DocumentVersion {
             url: url.clone(),
             timestamp,
@@ -240,7 +242,10 @@ mod test {
         let mut buf = vec![];
 
         let mut write = repo
-            .create(url.clone(), Utc::now() - chrono::Duration::seconds(60))
+            .create(
+                url.clone(),
+                DateTime::<FixedOffset>::from(Utc::now()) - chrono::Duration::seconds(60),
+            )
             .unwrap();
         write.write_all("old content".as_bytes()).unwrap();
         let (doc, _events) = write.done().unwrap();

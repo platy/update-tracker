@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset};
 
 use crate::Url;
 mod repository;
@@ -9,7 +9,7 @@ pub use repository::UpdateRepo;
 #[derive(Debug, PartialEq, Eq)]
 pub struct Update {
     url: Url,
-    timestamp: DateTime<Utc>,
+    timestamp: DateTime<FixedOffset>,
     change: String,
 }
 
@@ -31,7 +31,7 @@ impl fmt::Display for Update {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UpdateRef {
     pub url: Url,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: DateTime<FixedOffset>,
 }
 
 impl fmt::Display for UpdateRef {
@@ -57,8 +57,8 @@ impl FromStr for UpdateRef {
     }
 }
 
-impl From<(Url, DateTime<Utc>)> for UpdateRef {
-    fn from((url, timestamp): (Url, DateTime<Utc>)) -> Self {
+impl From<(Url, DateTime<FixedOffset>)> for UpdateRef {
+    fn from((url, timestamp): (Url, DateTime<FixedOffset>)) -> Self {
         Self { url, timestamp }
     }
 }
@@ -161,7 +161,7 @@ impl From<UpdateRefByTimestamp> for UpdateRef {
 #[derive(Debug, PartialEq, Eq)]
 pub enum UpdateEvent {
     /// Any update is added
-    Added { url: Url, timestamp: DateTime<Utc> },
+    Added { url: Url, timestamp: DateTime<FixedOffset> },
     /// A new newest update for a document is added
-    New { url: Url, timestamp: DateTime<Utc> },
+    New { url: Url, timestamp: DateTime<FixedOffset> },
 }

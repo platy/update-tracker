@@ -1,5 +1,5 @@
 use anyhow::*;
-use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, Utc};
 use clap::clap_app;
 use std::{
     collections::BTreeSet,
@@ -137,7 +137,9 @@ impl Filter {
             }
         }
         self.date_range.contains(&update_ref.timestamp.naive_local())
-            && self.age_range.contains(&(Utc::now() - update_ref.timestamp))
+            && self
+                .age_range
+                .contains(&(DateTime::<FixedOffset>::from(Utc::now()) - update_ref.timestamp))
     }
 
     fn parse_date_bound(s: &str) -> Result<Option<NaiveDateTime>> {

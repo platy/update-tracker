@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::Url;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset};
 use lazy_static::lazy_static;
 
 mod repository;
@@ -15,7 +15,7 @@ pub struct Document {
 #[derive(Debug, PartialEq, Eq)]
 pub struct DocumentVersion {
     url: Url,
-    timestamp: DateTime<Utc>,
+    timestamp: DateTime<FixedOffset>,
 }
 
 impl DocumentVersion {
@@ -40,7 +40,7 @@ impl fmt::Display for DocumentVersion {
 #[derive(Debug, PartialEq, Eq)]
 pub enum DocEvent {
     Created { url: Url },
-    Updated { url: Url, timestamp: DateTime<Utc> },
+    Updated { url: Url, timestamp: DateTime<FixedOffset> },
 }
 
 lazy_static! {
@@ -50,7 +50,7 @@ lazy_static! {
 
 /// Iterator over the history of updates in the document
 /// Panics if it doesn't recognise the format
-pub fn iter_history(doc: &scraper::Html) -> impl Iterator<Item = (DateTime<Utc>, String)> + '_ {
+pub fn iter_history(doc: &scraper::Html) -> impl Iterator<Item = (DateTime<FixedOffset>, String)> + '_ {
     doc.select(&UPDATE_SELECTOR).map(|time_elem| {
         let time =
             DateTime::parse_from_rfc3339(time_elem.value().attr("datetime").expect("no datetime attribute")).unwrap();
@@ -71,6 +71,6 @@ pub fn iter_history(doc: &scraper::Html) -> impl Iterator<Item = (DateTime<Utc>,
                 .trim()
                 .to_string()
         };
-        (time.into(), comment)
+        (time, comment)
     })
 }

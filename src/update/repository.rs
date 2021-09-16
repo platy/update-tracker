@@ -1,5 +1,5 @@
 use super::*;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset};
 use io::Read;
 use std::{
     cmp::max,
@@ -23,7 +23,7 @@ impl UpdateRepo {
     pub fn create(
         &self,
         url: Url,
-        timestamp: DateTime<Utc>,
+        timestamp: DateTime<FixedOffset>,
         change: &str,
     ) -> io::Result<(Update, impl Iterator<Item = UpdateEvent>)> {
         let path = self.path_for(&url, Some(&timestamp));
@@ -57,7 +57,7 @@ impl UpdateRepo {
     pub fn ensure(
         &self,
         url: Url,
-        timestamp: DateTime<Utc>,
+        timestamp: DateTime<FixedOffset>,
         change: &str,
     ) -> io::Result<(Update, impl Iterator<Item = UpdateEvent>)> {
         let path = self.path_for(&url, Some(&timestamp));
@@ -100,12 +100,12 @@ impl UpdateRepo {
     }
 
     /// Returns error if there is no update
-    pub fn latest(&self, url: &Url) -> io::Result<DateTime<Utc>> {
+    pub fn latest(&self, url: &Url) -> io::Result<DateTime<FixedOffset>> {
         let dir = fs::read_dir(self.path_for(url, None))?;
         let mut latest = None;
         for entry in dir {
             let entry = entry?;
-            let timestamp: DateTime<Utc> = entry
+            let timestamp: DateTime<FixedOffset> = entry
                 .file_name()
                 .to_str()
                 .ok_or_else::<io::Error, _>(|| io::ErrorKind::Other.into())?
@@ -120,7 +120,7 @@ impl UpdateRepo {
         latest.ok_or_else(|| io::ErrorKind::NotFound.into())
     }
 
-    pub fn get_update(&self, url: Url, timestamp: DateTime<Utc>) -> io::Result<Update> {
+    pub fn get_update(&self, url: Url, timestamp: DateTime<FixedOffset>) -> io::Result<Update> {
         let mut file = fs::File::open(self.path_for(&url, Some(&timestamp)))?;
         let mut change = vec![];
         file.read_to_end(&mut change)?;
@@ -151,7 +151,7 @@ impl UpdateRepo {
         }))
     }
 
-    fn path_for(&self, url: &Url, timestamp: Option<&DateTime<Utc>>) -> PathBuf {
+    fn path_for(&self, url: &Url, timestamp: Option<&DateTime<FixedOffset>>) -> PathBuf {
         let path = url.to_path(&self.base);
         if let Some(timestamp) = timestamp {
             path.join(timestamp.to_rfc3339())
@@ -165,13 +165,15 @@ impl UpdateRepo {
 mod test {
     use std::{thread, time};
 
+    use chrono::Utc;
+
     use super::*;
 
     #[test]
     fn old_update_creates_events_and_becomes_available() {
         let repo = test_repo("new_update_creates_events_and_becomes_available");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
-        let timestamp = Utc::now() - chrono::Duration::minutes(60);
+        let timestamp = DateTime::<FixedOffset>::from(Utc::now()) - chrono::Duration::minutes(60);
         let change = "older change";
         let should = Update {
             url: url.clone(),
@@ -179,7 +181,7 @@ mod test {
             change: change.to_owned(),
         };
 
-        let (_, events) = repo.create(url.clone(), Utc::now(), "newest change").unwrap();
+        let (_, events) = repo.create(url.clone(), Utc::now().into(), "newest change").unwrap();
         thread::sleep(time::Duration::from_millis(1));
         assert_eq!(events.count(), 2);
 
@@ -210,7 +212,7 @@ mod test {
         let repo = test_repo("newer_update_creates_event_and_becomes_available");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let change = "new change";
-        let timestamp = Utc::now();
+        let timestamp = Utc::now().into();
         let should = Update {
             url: url.clone(),
             timestamp,
@@ -218,7 +220,11 @@ mod test {
         };
 
         let (_, events) = repo
-            .create(url.clone(), Utc::now() - chrono::Duration::minutes(60), "old change")
+            .create(
+                url.clone(),
+                DateTime::<FixedOffset>::from(Utc::now()) - chrono::Duration::minutes(60),
+                "old change",
+            )
             .unwrap();
         thread::sleep(time::Duration::from_millis(1));
         assert_eq!(events.count(), 2);
@@ -255,7 +261,7 @@ mod test {
     fn old_update_ensure_creates_events_and_becomes_available() {
         let repo = test_repo("old_update_ensure_creates_events_and_becomes_available");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
-        let timestamp = Utc::now() - chrono::Duration::minutes(60);
+        let timestamp = DateTime::<FixedOffset>::from(Utc::now()) - chrono::Duration::minutes(60);
         let change = "older change";
         let should = Update {
             url: url.clone(),
@@ -263,7 +269,7 @@ mod test {
             change: change.to_owned(),
         };
 
-        let (_, events) = repo.ensure(url.clone(), Utc::now(), "newest change").unwrap();
+        let (_, events) = repo.ensure(url.clone(), Utc::now().into(), "newest change").unwrap();
         thread::sleep(time::Duration::from_millis(1));
         assert_eq!(events.count(), 2);
 
@@ -294,7 +300,7 @@ mod test {
         let repo = test_repo("newer_update_ensure_creates_event_and_becomes_available");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let change = "new change";
-        let timestamp = Utc::now();
+        let timestamp = Utc::now().into();
         let should = Update {
             url: url.clone(),
             timestamp,
@@ -302,7 +308,11 @@ mod test {
         };
 
         let (_, events) = repo
-            .ensure(url.clone(), Utc::now() - chrono::Duration::minutes(60), "old change")
+            .ensure(
+                url.clone(),
+                DateTime::<FixedOffset>::from(Utc::now()) - chrono::Duration::minutes(60),
+                "old change",
+            )
             .unwrap();
         thread::sleep(time::Duration::from_millis(1));
         assert_eq!(events.count(), 2);
@@ -340,7 +350,7 @@ mod test {
         let repo = test_repo("existing_update_ensure_is_noop");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let change = "existing change";
-        let timestamp = Utc::now();
+        let timestamp = Utc::now().into();
         let should = Update {
             url: url.clone(),
             timestamp,

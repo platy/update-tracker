@@ -1,7 +1,8 @@
 use std::{io, iter::empty, str::FromStr};
 
 use anyhow::{bail, ensure, Context, Result};
-use chrono::{DateTime, FixedOffset, TimeZone, Timelike, Utc};
+use chrono::{DateTime, FixedOffset, Offset, TimeZone, Timelike};
+use chrono_tz::Tz;
 use git2::{Blob, Commit, Diff, Oid};
 use html5ever::serialize::{HtmlSerializer, Serialize, SerializeOpts, Serializer, TraversalScope};
 use io::Write;
@@ -73,10 +74,11 @@ impl<'r> Extractor<'r> {
         Ok((v, skip_delete))
     }
 
-    pub fn main_doc_version(&self) -> Result<(Url, DateTime<Utc>)> {
+    pub fn main_doc_version(&self) -> Result<(Url, DateTime<FixedOffset>)> {
         let ts = self.updated_at()?;
+        let ts = ts.with_timezone(&ts.offset().fix());
         let change = self.message()?;
-        let match_score = |(_, updated_at, description): &(_, DateTime<Utc>, String)| {
+        let match_score = |(_, updated_at, description): &(_, DateTime<FixedOffset>, String)| {
             (updated_at.with_second(0).unwrap() == ts) as u8 + (change == *description) as u8
         };
 
@@ -164,22 +166,20 @@ impl<'r> Extractor<'r> {
     }
 
     /// timestamp of update
-    pub fn updated_at(&self) -> Result<DateTime<Utc>> {
+    pub fn updated_at(&self) -> Result<DateTime<Tz>> {
         let date = self.commit.message().unwrap().split(": ").next().unwrap();
         // println!("date{}", date);
         const DATE_FORMAT: &str = "%I:%M%p, %d %B %Y";
         let local_ts = chrono_tz::Europe::London
             .datetime_from_str(date, DATE_FORMAT)
             .context("parsing timestamp")?;
-        Ok(local_ts.with_timezone(&Utc))
+        Ok(local_ts)
     }
 
     /// timestamp of retrieval
-    pub fn retrieved_at(&self) -> DateTime<Utc> {
+    pub fn retrieved_at(&self) -> DateTime<FixedOffset> {
         let commit_time = self.commit.time();
-        FixedOffset::east(commit_time.offset_minutes() * 60)
-            .timestamp(commit_time.seconds(), 0)
-            .into()
+        FixedOffset::east(commit_time.offset_minutes() * 60).timestamp(commit_time.seconds(), 0)
     }
 
     pub fn message(&self) -> Result<String> {
@@ -245,7 +245,7 @@ impl<'r> DocExtractor<'r> {
         }
     }
 
-    pub fn history(&self) -> Box<dyn Iterator<Item = (DateTime<Utc>, String)> + '_> {
+    pub fn history(&self) -> Box<dyn Iterator<Item = (DateTime<FixedOffset>, String)> + '_> {
         if let Self::Html(html, _) = self {
             Box::new(iter_history(html))
         } else {

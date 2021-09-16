@@ -27,11 +27,7 @@ impl UpdateRepo {
         change: &str,
     ) -> io::Result<(Update, impl Iterator<Item = UpdateEvent>)> {
         let path = self.path_for(&url, Some(&timestamp));
-        let update = Update {
-            url,
-            timestamp,
-            change: change.to_owned(),
-        };
+        let update = Update::new(url, timestamp, change.to_owned());
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -40,12 +36,12 @@ impl UpdateRepo {
         file.flush()?;
 
         let events = iter::once(UpdateEvent::Added {
-            url: update.url.clone(),
+            url: update.url().clone(),
             timestamp,
         })
-        .chain(if self.latest(&update.url)? == timestamp {
+        .chain(if self.latest(update.url())? == timestamp {
             Some(UpdateEvent::New {
-                url: update.url.clone(),
+                url: update.url().clone(),
                 timestamp,
             })
         } else {
@@ -61,11 +57,7 @@ impl UpdateRepo {
         change: &str,
     ) -> io::Result<(Update, impl Iterator<Item = UpdateEvent>)> {
         let path = self.path_for(&url, Some(&timestamp));
-        let update = Update {
-            url,
-            timestamp,
-            change: change.to_owned(),
-        };
+        let update = Update::new(url, timestamp, change.to_owned());
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -82,14 +74,14 @@ impl UpdateRepo {
         file.flush()?;
 
         let added_event = UpdateEvent::Added {
-            url: update.url.clone(),
+            url: update.url().clone(),
             timestamp,
         };
-        let events = if self.latest(&update.url)? == timestamp {
+        let events = if self.latest(update.url())? == timestamp {
             vec![
                 added_event,
                 UpdateEvent::New {
-                    url: update.url.clone(),
+                    url: update.url().clone(),
                     timestamp,
                 },
             ]
@@ -125,7 +117,7 @@ impl UpdateRepo {
         let mut change = vec![];
         file.read_to_end(&mut change)?;
         let change = String::from_utf8(change).map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-        let doc_version = Update { url, timestamp, change };
+        let doc_version = Update::new(url, timestamp, change);
         Ok(doc_version)
     }
 
@@ -143,12 +135,18 @@ impl UpdateRepo {
                 .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
             let change = String::from_utf8(fs::read(&self.path_for(&url, Some(&timestamp)))?)
                 .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
-            Ok(Update {
-                url: url.clone(),
-                timestamp,
-                change,
-            })
+            Ok(Update::new(url.clone(), timestamp, change))
         }))
+    }
+
+    /// Lists all updates
+    pub fn list_all(&self, base_url: &Url) -> io::Result<IterDocs<'_>> {
+        let root_path: PathBuf = base_url.to_path(&self.base);
+        Ok(IterDocs {
+            repo: self,
+            url: base_url.clone(),
+            stack: vec![fs::read_dir(root_path)?],
+        })
     }
 
     fn path_for(&self, url: &Url, timestamp: Option<&DateTime<FixedOffset>>) -> PathBuf {
@@ -157,6 +155,62 @@ impl UpdateRepo {
             path.join(timestamp.to_rfc3339())
         } else {
             path
+        }
+    }
+}
+
+// iterator over all updates in the repo
+pub struct IterDocs<'r> {
+    repo: &'r UpdateRepo,
+    url: Url,
+    stack: Vec<fs::ReadDir>,
+}
+
+impl<'r> Iterator for IterDocs<'r> {
+    type Item = io::Result<Update>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // ascend the tree if at the end of branches and get the next `DirEntry`
+        let mut next_dir_entry = loop {
+            if let Some(iter) = self.stack.last_mut() {
+                if let Some(entry) = iter.next() {
+                    break entry;
+                } else {
+                    self.stack.pop().unwrap();
+                    self.url.pop_path_segment();
+                }
+            } else {
+                return None;
+            }
+        };
+
+        // descend to the next doc
+        loop {
+            match next_dir_entry {
+                Err(err) => break Some(Err(err)),
+                Ok(dir_entry) => {
+                    let file_type = dir_entry.file_type().unwrap();
+                    if file_type.is_dir() {
+                        self.url.push_path_segment(dir_entry.file_name().to_str().unwrap());
+                        let mut dir = fs::read_dir(self.repo.path_for(&self.url, None)).unwrap();
+                        next_dir_entry = dir.next().expect("todo: handle empty dir in repo");
+                        self.stack.push(dir);
+                    } else if file_type.is_file() {
+                        let timestamp = dir_entry
+                            .file_name()
+                            .to_str()
+                            .unwrap()
+                            .parse()
+                            .map_err(|error| io::Error::new(io::ErrorKind::Other, error))
+                            .unwrap();
+                        let url = self.url.clone();
+                        let change = fs::read_to_string(dir_entry.path()).unwrap();
+                        break Some(Ok(Update::new(url, timestamp, change)));
+                    } else {
+                        panic!("symlink in repo");
+                    }
+                }
+            }
         }
     }
 }
@@ -175,11 +229,7 @@ mod test {
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let timestamp = DateTime::<FixedOffset>::from(Utc::now()) - chrono::Duration::minutes(60);
         let change = "older change";
-        let should = Update {
-            url: url.clone(),
-            timestamp,
-            change: change.to_owned(),
-        };
+        let should = Update::new(url.clone(), timestamp, change.to_owned());
 
         let (_, events) = repo.create(url.clone(), Utc::now().into(), "newest change").unwrap();
         thread::sleep(time::Duration::from_millis(1));
@@ -213,11 +263,7 @@ mod test {
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let change = "new change";
         let timestamp = Utc::now().into();
-        let should = Update {
-            url: url.clone(),
-            timestamp,
-            change: change.to_owned(),
-        };
+        let should = Update::new(url.clone(), timestamp, change.to_owned());
 
         let (_, events) = repo
             .create(
@@ -263,11 +309,7 @@ mod test {
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let timestamp = DateTime::<FixedOffset>::from(Utc::now()) - chrono::Duration::minutes(60);
         let change = "older change";
-        let should = Update {
-            url: url.clone(),
-            timestamp,
-            change: change.to_owned(),
-        };
+        let should = Update::new(url.clone(), timestamp, change.to_owned());
 
         let (_, events) = repo.ensure(url.clone(), Utc::now().into(), "newest change").unwrap();
         thread::sleep(time::Duration::from_millis(1));
@@ -301,11 +343,7 @@ mod test {
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let change = "new change";
         let timestamp = Utc::now().into();
-        let should = Update {
-            url: url.clone(),
-            timestamp,
-            change: change.to_owned(),
-        };
+        let should = Update::new(url.clone(), timestamp, change.to_owned());
 
         let (_, events) = repo
             .ensure(
@@ -351,11 +389,7 @@ mod test {
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let change = "existing change";
         let timestamp = Utc::now().into();
-        let should = Update {
-            url: url.clone(),
-            timestamp,
-            change: change.to_owned(),
-        };
+        let should = Update::new(url.clone(), timestamp, change.to_owned());
 
         let (_, events) = repo.ensure(url.clone(), timestamp, change).unwrap();
         thread::sleep(time::Duration::from_millis(1));
@@ -374,6 +408,62 @@ mod test {
 
         thread::sleep(time::Duration::from_millis(1));
         assert_eq!(events.count(), 0);
+    }
+
+    #[test]
+    fn list_updates() {
+        let repo = test_repo("list_updates");
+
+        let docs = &[
+            ("http://www.example.org/test/doc1", "2021-03-01T10:00:00+00:00", "1"),
+            ("http://www.example.org/test/doc1", "2021-03-01T11:00:00+00:00", "2"),
+            ("http://www.example.org/test/doc1", "2021-03-01T12:00:00+00:00", "3"),
+            ("http://www.example.org/test/doc2", "2021-03-01T11:00:00+00:00", "4"),
+            ("http://www.example.org/test/doc2", "2021-03-01T12:00:00+00:00", "5"),
+        ];
+
+        for (url, timestamp, content) in docs {
+            let _ = repo
+                .create(url.parse().unwrap(), timestamp.parse().unwrap(), content)
+                .unwrap();
+        }
+
+        let result = repo
+            .list_updates("http://www.example.org/test/doc1".parse().unwrap())
+            .unwrap();
+        for (&(e_url, e_ts, e_content), actual) in docs[0..3].iter().rev().zip(result) {
+            let actual = actual.unwrap();
+            assert_eq!(actual.url().as_str(), e_url);
+            assert_eq!(actual.timestamp().to_rfc3339(), e_ts);
+            assert_eq!(actual.change(), e_content);
+        }
+    }
+
+    #[test]
+    fn list_all() {
+        let repo = test_repo("list_all");
+
+        let docs = &[
+            ("http://www.example.org/test/doc1", "2021-03-01T10:00:00+00:00", "1"),
+            ("http://www.example.org/test/doc1", "2021-03-01T11:00:00+00:00", "2"),
+            ("http://www.example.org/test/doc1", "2021-03-01T12:00:00+00:00", "3"),
+            ("http://www.example.org/test/doc2", "2021-03-01T11:00:00+00:00", "4"),
+            ("http://www.example.org/test/doc2", "2021-03-01T12:00:00+00:00", "5"),
+        ];
+
+        for (url, timestamp, content) in docs {
+            let _ = repo
+                .create(url.parse().unwrap(), timestamp.parse().unwrap(), content)
+                .unwrap();
+        }
+
+        let result = repo.list_all(&"http://www.example.org/".parse().unwrap()).unwrap();
+        for (&(e_url, e_ts, e_content), actual) in docs.iter().zip(result) {
+            let actual = actual.unwrap();
+            assert_eq!(actual.url().as_str(), e_url);
+            assert_eq!(actual.timestamp().to_rfc3339(), e_ts);
+            assert_eq!(actual.change(), e_content);
+        }
     }
 
     fn test_repo(name: &str) -> UpdateRepo {

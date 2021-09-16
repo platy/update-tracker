@@ -8,14 +8,34 @@ pub use repository::UpdateRepo;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Update {
-    url: Url,
-    timestamp: DateTime<FixedOffset>,
+    update_ref: UpdateRef,
     change: String,
 }
 
 impl Update {
+    pub(crate) fn new(url: Url, timestamp: DateTime<FixedOffset>, change: String) -> Self {
+        Self {
+            update_ref: UpdateRef { url, timestamp },
+            change,
+        }
+    }
+
+    pub fn url(&self) -> &Url {
+        &self.update_ref.url
+    }
+
+    pub fn timestamp(&self) -> &DateTime<FixedOffset> {
+        &self.update_ref.timestamp
+    }
+
     pub fn change(&self) -> &str {
         &self.change
+    }
+}
+
+impl AsRef<UpdateRef> for Update {
+    fn as_ref(&self) -> &UpdateRef {
+        &self.update_ref
     }
 }
 
@@ -23,7 +43,7 @@ impl fmt::Display for Update {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::write(
             f,
-            format_args!("Update at {} on {}", self.timestamp.to_rfc3339(), self.url.as_str()),
+            format_args!("Update at {} on {}", self.timestamp().to_rfc3339(), self.url().as_str()),
         )
     }
 }

@@ -4,12 +4,13 @@ use clap::clap_app;
 use std::{
     collections::BTreeSet,
     convert::TryFrom,
+    fmt,
     ops::{Bound, RangeBounds},
 };
 
 use update_tracker::{
     tag::{Tag, TagRepo},
-    update::{UpdateRef, UpdateRefByTimestamp, UpdateRefByUrl, UpdateRepo},
+    update::{Update, UpdateRef, UpdateRefByTimestamp, UpdateRefByUrl, UpdateRepo},
 };
 
 fn main() -> Result<()> {
@@ -60,14 +61,33 @@ where
             }
             updates = tmp_updates;
         }
-        for update in updates {
-            let update: UpdateRef = update.into();
-            println!("{}: {}", &update.timestamp, &update.url);
-            let comment = update_repo.get_update(update.url.clone(), update.timestamp)?;
-            println!("\t{}", comment.change());
-        }
+        let updates = updates
+            .into_iter()
+            .map(Into::into)
+            .map(|update_ref| update_repo.get_update(update_ref.url.clone(), update_ref.timestamp));
+        print_updates(updates, &update_repo)?;
     } else {
-        todo!("Needs list all updates in repo");
+        let updates = update_repo
+            .list_all(&"https://www.gov.uk/".parse().unwrap())?
+            .filter(|update| {
+                update
+                    .as_ref()
+                    .map_or(true, |update| filter.filter_update_ref(update.as_ref()))
+            });
+        print_updates(updates, &update_repo)?;
+    }
+    Ok(())
+}
+
+fn print_updates<E>(updates: impl IntoIterator<Item = Result<Update, E>>, update_repo: &UpdateRepo) -> Result<(), Error>
+where
+    E: fmt::Debug,
+{
+    for update in updates {
+        let update = update.unwrap();
+        println!("{}: {}", &update.timestamp(), &update.url());
+        let comment = update_repo.get_update(update.url().clone(), *update.timestamp())?;
+        println!("\t{}", comment.change());
     }
     Ok(())
 }

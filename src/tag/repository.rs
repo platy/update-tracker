@@ -1,8 +1,9 @@
+use crate::repository::WriteResult;
+
 use super::*;
 use std::{
     fs::{self},
     io::{self, BufRead, BufReader, Write},
-    iter,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -18,11 +19,7 @@ impl TagRepo {
         Ok(Self { base })
     }
 
-    pub fn tag_update(
-        &self,
-        tag_name: String,
-        update_ref: UpdateRef,
-    ) -> io::Result<(Tag, impl Iterator<Item = TagEvent>)> {
+    pub fn tag_update(&self, tag_name: String, update_ref: UpdateRef) -> WriteResult<Tag, 2> {
         let tag = Tag { name: tag_name };
         let path = self.path_for(&tag);
         if let Some(parent) = path.parent() {
@@ -42,18 +39,11 @@ impl TagRepo {
         file.write_all(format!("{}\n", update_ref).as_bytes())?;
         file.flush()?;
 
-        let events = if is_new_tag {
-            Some(TagEvent::TagCreated { tag: tag.clone() })
-        } else {
-            None
-        }
-        .into_iter()
-        .chain(iter::once(TagEvent::UpdateTagged {
-            tag: tag.clone(),
-            update_ref,
-        }));
-
-        Ok((tag, events))
+        let events = [
+            Some(TagEvent::update_tagged(&tag, &update_ref)),
+            is_new_tag.then(|| TagEvent::tag_created(&tag)),
+        ];
+        tag.with_events(events)
     }
 
     /// Lists all tags, sorted by name

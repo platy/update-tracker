@@ -3,7 +3,7 @@ use std::fmt;
 mod repository;
 pub use repository::TagRepo;
 
-use crate::update::UpdateRef;
+use crate::{repository::Entity, update::UpdateRef};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Tag {
@@ -20,6 +20,10 @@ impl Tag {
     }
 }
 
+impl Entity for Tag {
+    type WriteEvent = TagEvent;
+}
+
 impl fmt::Display for Tag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.name.fmt(f)
@@ -32,4 +36,16 @@ pub enum TagEvent {
     UpdateTagged { tag: Tag, update_ref: UpdateRef },
     /// A new tag is added
     TagCreated { tag: Tag },
+}
+impl TagEvent {
+    pub(crate) fn tag_created(tag: &Tag) -> Self {
+        Self::TagCreated { tag: tag.clone() }
+    }
+
+    pub(crate) fn update_tagged(tag: &Tag, update_ref: &UpdateRef) -> Self {
+        Self::UpdateTagged {
+            tag: tag.clone(),
+            update_ref: update_ref.clone(),
+        }
+    }
 }

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::Url;
+use crate::{repository::Entity, Url};
 use chrono::{DateTime, FixedOffset};
 use lazy_static::lazy_static;
 
@@ -24,6 +24,10 @@ impl DocumentVersion {
     }
 }
 
+impl Entity for DocumentVersion {
+    type WriteEvent = DocEvent;
+}
+
 impl fmt::Display for DocumentVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::write(
@@ -41,6 +45,19 @@ impl fmt::Display for DocumentVersion {
 pub enum DocEvent {
     Created { url: Url },
     Updated { url: Url, timestamp: DateTime<FixedOffset> },
+}
+
+impl DocEvent {
+    pub(crate) fn created(doc: &DocumentVersion) -> Self {
+        Self::Created { url: doc.url.clone() }
+    }
+
+    pub(crate) fn updated(doc: &DocumentVersion) -> Self {
+        Self::Updated {
+            url: doc.url.clone(),
+            timestamp: doc.timestamp,
+        }
+    }
 }
 
 lazy_static! {

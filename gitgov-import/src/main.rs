@@ -95,10 +95,10 @@ fn import_update_from_commit(
         ts2.with_second(0).unwrap()
     );
 
-    let (_tag, _events) = tag_repo
+    let _tag = tag_repo
         .tag_update(tag.to_owned(), (url.clone(), ts2).into())
         .context("Tagging update in repo")?;
-    let (_update, _events) = update_repo
+    let _update = update_repo
         .ensure(url, ts2, &change)
         .context("Creating update in repo")?;
     Ok(())
@@ -113,7 +113,7 @@ fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Res
         match doc_repo.create(url.clone(), ts) {
             Ok(mut writer) => {
                 writer.write_all(content.as_bytes())?;
-                let (_update, _events) = writer.done()?;
+                let _update = writer.done()?;
                 count += 1;
                 Ok(())
             }

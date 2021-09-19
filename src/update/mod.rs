@@ -2,7 +2,7 @@ use std::{fmt, str::FromStr};
 
 use chrono::{DateTime, FixedOffset};
 
-use crate::Url;
+use crate::{repository::Entity, Url};
 mod repository;
 pub use repository::UpdateRepo;
 
@@ -31,6 +31,10 @@ impl Update {
     pub fn change(&self) -> &str {
         &self.change
     }
+}
+
+impl Entity for Update {
+    type WriteEvent = UpdateEvent;
 }
 
 impl AsRef<UpdateRef> for Update {
@@ -184,4 +188,20 @@ pub enum UpdateEvent {
     Added { url: Url, timestamp: DateTime<FixedOffset> },
     /// A new newest update for a document is added
     New { url: Url, timestamp: DateTime<FixedOffset> },
+}
+
+impl UpdateEvent {
+    pub(crate) fn added(update: &Update) -> UpdateEvent {
+        Self::Added {
+            url: update.url().clone(),
+            timestamp: *update.timestamp(),
+        }
+    }
+
+    pub(crate) fn new(update: &Update) -> UpdateEvent {
+        Self::New {
+            url: update.url().clone(),
+            timestamp: *update.timestamp(),
+        }
+    }
 }

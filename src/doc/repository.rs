@@ -1,9 +1,10 @@
+use crate::repository::WriteResult;
+
 use super::*;
 use chrono::DateTime;
 use std::{
     fs,
     io::{self, Write},
-    iter,
     path::{Path, PathBuf},
 };
 
@@ -94,21 +95,13 @@ pub struct TempDoc {
 }
 
 impl TempDoc {
-    pub fn done(mut self) -> io::Result<(DocumentVersion, impl Iterator<Item = DocEvent>)> {
+    pub fn done(mut self) -> WriteResult<DocumentVersion, 2> {
         self.file.flush()?;
-        let events = if self.is_new_doc {
-            Some(DocEvent::Created {
-                url: self.doc.url.clone(),
-            })
-        } else {
-            None
-        }
-        .into_iter()
-        .chain(iter::once(DocEvent::Updated {
-            url: self.doc.url.clone(),
-            timestamp: self.doc.timestamp,
-        }));
-        Ok((self.doc, events))
+        let events = [
+            Some(DocEvent::updated(&self.doc)),
+            self.is_new_doc.then(|| DocEvent::created(&self.doc)),
+        ];
+        self.doc.with_events(events)
     }
 }
 
@@ -180,11 +173,7 @@ impl<'r> Iterator for IterDocs<'r> {
 
 #[cfg(test)]
 mod test {
-    use std::{
-        io::Read,
-        thread::{self},
-        time,
-    };
+    use std::io::Read;
 
     use chrono::Utc;
 
@@ -205,10 +194,21 @@ mod test {
         let mut write = repo.create(url.clone(), timestamp).unwrap();
         write.write_all(doc_content.as_bytes()).unwrap();
 
-        let (doc, events) = write.done().unwrap();
-        assert_eq!(doc, should);
+        let doc = write.done().unwrap();
+        assert_eq!(*doc, should);
         repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
         assert_eq!(buf, doc_content.as_bytes());
+
+        assert_eq!(
+            doc.into_events().collect::<Vec<_>>(),
+            [
+                DocEvent::Updated {
+                    url: url.clone(),
+                    timestamp
+                },
+                DocEvent::Created { url: url.clone() }
+            ]
+        );
 
         let doc: DocumentVersion = repo.ensure_version(url.clone(), timestamp).unwrap();
         assert_eq!(doc, should);
@@ -221,12 +221,6 @@ mod test {
         buf.clear();
         repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
         assert_eq!(buf, doc_content.as_bytes());
-
-        thread::sleep(time::Duration::from_millis(1));
-        let events: Vec<_> = events.collect();
-        assert_eq!(events.len(), 2);
-        assert_eq!(events[0], DocEvent::Created { url: url.clone() });
-        assert_eq!(events[1], DocEvent::Updated { url, timestamp });
     }
 
     #[test]
@@ -248,18 +242,24 @@ mod test {
             )
             .unwrap();
         write.write_all("old content".as_bytes()).unwrap();
-        let (doc, _events) = write.done().unwrap();
+        let doc = write.done().unwrap();
         repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
-        thread::sleep(time::Duration::from_millis(1));
 
         let mut write = repo.create(url.clone(), timestamp).unwrap();
         write.write_all(doc_content.as_bytes()).unwrap();
-        let (doc, events) = write.done().unwrap();
-
-        assert_eq!(doc, should);
+        let doc = write.done().unwrap();
+        assert_eq!(*doc, should);
         buf.clear();
         repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
         assert_eq!(buf, doc_content.as_bytes());
+
+        assert_eq!(
+            doc.into_events().collect::<Vec<_>>(),
+            [DocEvent::Updated {
+                url: url.clone(),
+                timestamp
+            },]
+        );
 
         let doc: DocumentVersion = repo.ensure_version(url.clone(), timestamp).unwrap();
         assert_eq!(doc, should);
@@ -274,16 +274,11 @@ mod test {
         repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
         assert_eq!(buf, doc_content.as_bytes());
         let _old = list.next().unwrap().unwrap();
-
-        thread::sleep(time::Duration::from_millis(1));
-        let events: Vec<_> = events.collect();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0], DocEvent::Updated { url, timestamp });
     }
 
     #[test]
     fn list_versions() {
-        let repo = test_repo("list_versions");
+        let repo = test_repo("doc::list_versions");
 
         let docs = &[
             ("http://www.example.org/test/doc1", "2021-03-01T10:00:00+00:00", "1"),
@@ -315,7 +310,7 @@ mod test {
 
     #[test]
     fn list_all() {
-        let repo = test_repo("list_all");
+        let repo = test_repo("doc::list_all");
 
         let docs = &[
             ("http://www.example.org/test/doc1", "2021-03-01T10:00:00+00:00", "1"),

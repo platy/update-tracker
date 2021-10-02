@@ -45,6 +45,7 @@ impl fmt::Display for DocumentVersion {
 pub enum DocEvent {
     Created { url: Url },
     Updated { url: Url, timestamp: DateTime<FixedOffset> },
+    Deleted { url: Url, timestamp: DateTime<FixedOffset> },
 }
 
 impl DocEvent {
@@ -54,6 +55,13 @@ impl DocEvent {
 
     pub(crate) fn updated(doc: &DocumentVersion) -> Self {
         Self::Updated {
+            url: doc.url.clone(),
+            timestamp: doc.timestamp,
+        }
+    }
+
+    pub(crate) fn deleted(doc: &DocumentVersion) -> Self {
+        Self::Deleted {
             url: doc.url.clone(),
             timestamp: doc.timestamp,
         }

@@ -1,14 +1,20 @@
 use std::{
     fs::remove_dir_all,
     io::{self, Read, Write},
+    iter::successors,
+    ops::AddAssign,
     str::from_utf8,
 };
 
 use anyhow::{ensure, format_err, Context, Result};
-use chrono::Timelike;
 use extractor::Extractor;
 use git2::Repository;
-use update_tracker::{doc::DocRepo, tag::TagRepo, update::UpdateRepo, Url};
+use update_tracker::{
+    doc::{DocEvent, DocRepo},
+    tag::TagRepo,
+    update::UpdateRepo,
+    Url,
+};
 
 mod extractor;
 
@@ -23,28 +29,25 @@ fn main() -> Result<()> {
 
     let repo = Repository::open(dotenv::var("GITGOV_REPO")?)?;
     let reference = repo.find_reference(&dotenv::var("GITGOV_REF")?)?;
-    let mut commit = reference.peel_to_commit()?;
+    let last_commit = reference.peel_to_commit()?;
 
     let mut doc_repo = DocRepo::new(doc_repo_base)?;
     let mut tag_repo = TagRepo::new(tag_repo_base)?;
     let mut update_repo = UpdateRepo::new(update_repo_base)?;
 
     let mut update_imports_skipped = 0;
-    let mut deleted_docs_skipped = 0;
-    let mut docs_imported = 0;
     let mut updates_imported = 0;
+    let mut doc_stats = DocImportStats::new();
 
-    loop {
+    for commit in successors(Some(last_commit), |commit| commit.parents().next()) {
         if commit.author().email().unwrap() == "info@gov.uk" {
             let extractor = Extractor::new(&repo, &commit);
-            let (doc_count, skipped_deleted) = import_docs_from_commit(&extractor, &mut doc_repo)
+            doc_stats += import_docs_from_commit(&extractor, &mut doc_repo)
                 .context(format!("Importing docs from {}", commit.id()))?;
-            docs_imported += doc_count;
-            deleted_docs_skipped += skipped_deleted;
             if let Err(e) = import_update_from_commit(&extractor, &mut tag_repo, &mut update_repo)
                 .context(format!("Importing tag from {}", commit.id()))
             {
-                println!("Error importing tag : {:? }", e);
+                println!("Error importing tag : {:? }\n", e);
                 update_imports_skipped += 1;
             } else {
                 updates_imported += 1;
@@ -53,22 +56,30 @@ fn main() -> Result<()> {
             println!("Non-update commit : {}", commit.message().unwrap());
         }
 
+        let commit_date = chrono::TimeZone::timestamp(
+            &chrono::FixedOffset::east(60 * commit.time().offset_minutes()),
+            commit.time().seconds(),
+            0,
+        )
+        .date();
+
         print!(
-            "Imported: {} docs, {} updates. {} skipped updates. {} deleted docs\r",
-            docs_imported, updates_imported, update_imports_skipped, deleted_docs_skipped
+            "{}: Imported: {} docs: {} new, {} updated, {} deleted, {} updates. {} skipped updates. {} deleted docs\r",
+            commit_date,
+            doc_stats.docs_imported,
+            doc_stats.events_new,
+            doc_stats.events_updated,
+            doc_stats.events_deleted,
+            updates_imported,
+            update_imports_skipped,
+            doc_stats.skip_deleted,
         );
         io::stdout().flush().unwrap();
-
-        if let Some(parent) = commit.parents().next() {
-            commit = parent;
-        } else {
-            break;
-        }
     }
-    println!("{} docs imported", docs_imported);
+    println!("{} docs imported", doc_stats.docs_imported);
     println!("{} updates imported", updates_imported);
     println!("{} errors importing updates", update_imports_skipped);
-    println!("{} deleted docs skipped", deleted_docs_skipped);
+    println!("{} deleted docs skipped", doc_stats.skip_deleted);
 
     Ok(())
 }
@@ -79,6 +90,8 @@ fn import_update_from_commit(
     tag_repo: &mut TagRepo,
     update_repo: &mut UpdateRepo,
 ) -> Result<()> {
+    use chrono::Timelike;
+
     let ts1 = extractor.updated_at()?;
     let change = extractor.message()?;
     let tag = extractor.tag().unwrap_or("Unknown");
@@ -104,8 +117,11 @@ fn import_update_from_commit(
     Ok(())
 }
 
-fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Result<(u32, u32)> {
-    let mut count = 0;
+fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Result<DocImportStats> {
+    let mut docs_imported = 0;
+    let mut events_new = 0;
+    let mut events_updated = 0;
+    let mut events_deleted = 0;
     let ts = extractor.retrieved_at();
     let (doc_versions, skip_deleted) = extractor.doc_versions().context("loading doc versions")?;
     for (url, content) in doc_versions {
@@ -113,8 +129,15 @@ fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Res
         match doc_repo.create(url.clone(), ts) {
             Ok(mut writer) => {
                 writer.write_all(content.as_bytes())?;
-                let _update = writer.done()?;
-                count += 1;
+                let update = writer.done()?;
+                for event in update.into_events() {
+                    match event {
+                        DocEvent::Created { .. } => events_new += 1,
+                        DocEvent::Updated { .. } => events_updated += 1,
+                        DocEvent::Deleted { .. } => events_deleted += 1,
+                    }
+                }
+                docs_imported += 1;
                 Ok(())
             }
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
@@ -122,20 +145,67 @@ fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Res
                 let mut existing_data: Vec<u8> = vec![];
                 doc_repo.open(&existing)?.read_to_end(&mut existing_data)?;
                 if existing_data == content.as_bytes() {
-                    println!("exists {}", &existing);
+                    println!("Doc version already exists {}", &existing);
                     Ok(())
                 } else {
                     let diff = prettydiff::diff_lines(from_utf8(&existing_data)?, content.as_str());
                     Err(format_err!(
-                        "Update exists for {}/{} with different content : {}",
+                        "Doc version exists for {}/{} with different content : {}",
                         &url.as_str(),
                         &ts,
                         diff,
                     ))
                 }
-            }
-            Err(err) => Err(err).context("error writing update"),
+            },
+            Err(err) => {
+                Err(err).context("error writing doc version")
+            },
         }?;
     }
-    Ok((count, skip_deleted))
+    Ok(DocImportStats {
+        docs_imported,
+        skip_deleted,
+        events_new,
+        events_updated,
+        events_deleted,
+    })
+}
+
+struct DocImportStats {
+    docs_imported: u16,
+    skip_deleted: u16,
+    events_new: u16,
+    events_updated: u16,
+    events_deleted: u16,
+}
+
+impl DocImportStats {
+    fn new() -> Self {
+        Self {
+            docs_imported: 0,
+            skip_deleted: 0,
+            events_new: 0,
+            events_updated: 0,
+            events_deleted: 0,
+        }
+    }
+}
+
+impl AddAssign for DocImportStats {
+    fn add_assign(
+        &mut self,
+        Self {
+            docs_imported,
+            skip_deleted,
+            events_new,
+            events_updated,
+            events_deleted,
+        }: Self,
+    ) {
+        self.docs_imported += docs_imported;
+        self.skip_deleted += skip_deleted;
+        self.events_new += events_new;
+        self.events_updated += events_updated;
+        self.events_deleted += events_deleted;
+    }
 }

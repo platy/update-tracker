@@ -27,7 +27,7 @@ impl<'r> Extractor<'r> {
     }
 
     /// Extracts the documents contained in this commit as well as a count of skipped deleted files
-    pub fn doc_versions(&self) -> Result<(Vec<(Url, DocExtractor<'_>)>, u32)> {
+    pub fn doc_versions(&self) -> Result<(Vec<(Url, DocExtractor<'_>)>, u16)> {
         let mut skip_delete = 0;
         let mut v = vec![];
         for diff in self.diff()?.deltas() {

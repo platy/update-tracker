@@ -2,11 +2,7 @@ use crate::repository::WriteResult;
 
 use super::*;
 use chrono::DateTime;
-use std::{
-    fs,
-    io::{self, Write},
-    path::{Path, PathBuf},
-};
+use std::{fs, io::{self, Read, Write}, path::{Path, PathBuf}};
 
 pub struct DocRepo {
     base: PathBuf,
@@ -19,6 +15,7 @@ impl DocRepo {
         Ok(Self { base })
     }
 
+    /// Create a [`DocumentVersion`] and return a writer to write the content
     pub fn create(&self, url: Url, timestamp: DateTime<FixedOffset>) -> io::Result<TempDoc> {
         let doc = DocumentVersion { url, timestamp };
         let path = self.path_for_version(&doc);
@@ -26,18 +23,65 @@ impl DocRepo {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let file = fs::OpenOptions::new().write(true).create_new(true).open(path)?;
-        Ok(TempDoc { is_new_doc, doc, file })
+        let file = fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
+        let open_neighbour = |dv| -> io::Result<_> {
+            let path = self.path_for_version(&dv);
+            let file = fs::File::open(&path)?;
+            Ok((dv, file))
+        };
+        let (before, after) = self.neighbours(&doc)?;
+        let identical_before = before.map(open_neighbour).transpose()?;
+        let identical_after = after.map(open_neighbour).transpose()?;
+        Ok(TempDoc { is_new_doc, doc, file, repo: self, identical_before, identical_after, buffer: [0; 1024] })
     }
 
+    /// Open a [`DocumentVersion`] for reading
     pub fn open(&self, doc_version: &DocumentVersion) -> io::Result<impl io::Read> {
         fs::File::open(self.path_for_version(doc_version))
     }
 
+    /// Ensure that a [`DocumentVersion`] exists for a given url and timestamp
     pub fn ensure_version(&self, url: Url, timestamp: DateTime<FixedOffset>) -> io::Result<DocumentVersion> {
         let doc_version = DocumentVersion { url, timestamp };
         fs::File::open(self.path_for_version(&doc_version))?;
         Ok(doc_version)
+    }
+
+    /// Find chronological neighbours of this DocumentVersion
+    fn neighbours(
+        &self,
+        DocumentVersion {
+            url: r_url,
+            timestamp: r_ts,
+        }: &DocumentVersion,
+    ) -> io::Result<(Option<DocumentVersion>, Option<DocumentVersion>)> {
+        let mut before: Option<DocumentVersion> = None;
+        let mut after: Option<DocumentVersion> = None;
+        for result in self.list_versions(r_url.to_owned())? {
+            let candidate = result?;
+            match candidate.timestamp.cmp(r_ts) {
+                std::cmp::Ordering::Less => {
+                    if let Some(before) = &mut before {
+                        if candidate.timestamp > before.timestamp {
+                            *before = candidate;
+                        }
+                    } else {
+                        before = Some(candidate);
+                    }
+                },
+                std::cmp::Ordering::Greater => {
+                    if let Some(after) = &mut after {
+                        if candidate.timestamp < after.timestamp {
+                            *after = candidate;
+                        }
+                    } else {
+                        after = Some(candidate);
+                    }
+                },
+                std::cmp::Ordering::Equal => {},
+            }
+        }
+        Ok((before, after))
     }
 
     /// Lists all updates on the specified url from newest to oldest
@@ -46,7 +90,7 @@ impl DocRepo {
         let mut dir: Vec<fs::DirEntry> = fs::read_dir(self.path_for_doc(&doc))?.collect::<io::Result<_>>()?;
         dir.sort_by_key(fs::DirEntry::file_name);
 
-        Ok(dir.into_iter().rev().map(move |dir_entry| {
+        Ok(dir.into_iter().filter(|e| e.file_type().unwrap().is_file()).rev().map(move |dir_entry| {
             let timestamp = dir_entry
                 .file_name()
                 .to_str()
@@ -87,27 +131,83 @@ impl DocRepo {
     }
 }
 
+const DUPLICATE_CHECK_BUFFER_SIZE: usize = 1024;
+
 /// TODO Maybe this should write to a temp file to start with and then be moved into place, that way the whole repo structure will consist of complete files
-pub struct TempDoc {
+pub struct TempDoc<'r> {
     is_new_doc: bool, // TODO replace with something better when fixing the above
     doc: DocumentVersion,
     file: fs::File,
+    repo: &'r DocRepo,
+    /// if `Some` this is a version that is timestamped directly before the one being written, as as far as the current doc has been written, both are identical
+    identical_before: Option<(DocumentVersion, fs::File)>,
+    /// like `identical_before` but with a version timestamped directly after the one being written
+    identical_after: Option<(DocumentVersion, fs::File)>,
+    buffer: [u8; DUPLICATE_CHECK_BUFFER_SIZE],
 }
 
-impl TempDoc {
+impl TempDoc<'_> {
     pub fn done(mut self) -> WriteResult<DocumentVersion, 2> {
         self.file.flush()?;
-        let events = [
-            Some(DocEvent::updated(&self.doc)),
-            self.is_new_doc.then(|| DocEvent::created(&self.doc)),
-        ];
-        self.doc.with_events(events)
+        // TODO check that any neighbour files have reached EOF, ohterwise set them to none
+        if let Some((before, _)) = self.identical_before {
+            fs::remove_file(self.repo.path_for_version(&self.doc))?;
+            before.with_events([None, None])
+        } else if let Some((after, _)) = self.identical_after {
+            fs::remove_file(self.repo.path_for_version(&after))?;
+            let events = [
+                Some(DocEvent::updated(&self.doc)),
+                Some(DocEvent::deleted(&after)),
+            ];
+            self.doc.with_events(events)
+        } else {
+            let events = [
+                Some(DocEvent::updated(&self.doc)),
+                self.is_new_doc.then(|| DocEvent::created(&self.doc)),
+            ];
+            self.doc.with_events(events)
+        }
+    }
+
+    fn check_duplicate_neighbours(&mut self, buf: &[u8]) -> io::Result<()> {
+        let mut comparison_buf = &mut self.buffer[..buf.len()];
+        if let Some((_, file)) = &mut self.identical_before {
+            match file.read_exact(&mut comparison_buf) {
+                Err(e) => if e.kind() == io::ErrorKind::UnexpectedEof {
+                    self.identical_before = None;
+                } else {
+                    return Err(e)
+                },
+                Ok(()) =>
+                    if comparison_buf != buf {
+                        self.identical_before = None;
+                    }
+            }
+        }
+        if let Some((_, file)) = &mut self.identical_after {
+            match file.read_exact(&mut comparison_buf) {
+                Err(e) => if e.kind() == io::ErrorKind::UnexpectedEof {
+                    self.identical_after = None;
+                } else {
+                    return Err(e)
+                },
+                Ok(()) =>
+                    if comparison_buf != buf {
+                        self.identical_after = None;
+                    }
+            }
+        }
+        Ok(())
     }
 }
 
-impl io::Write for TempDoc {
+impl io::Write for TempDoc<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.file.write(buf)
+        let written = self.file.write(buf)?;
+        for check in buf[0..written].chunks(DUPLICATE_CHECK_BUFFER_SIZE) {
+            self.check_duplicate_neighbours(check)?;
+        }
+        Ok(written)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -274,6 +374,66 @@ mod test {
         repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
         assert_eq!(buf, doc_content.as_bytes());
         let _old = list.next().unwrap().unwrap();
+    }
+
+    #[test]
+    fn new_duplicate_is_deduplicated() {
+        let repo = test_repo("new_duplicate_is_deduplicated");
+        let url: Url = "http://www.example.org/test/doc".parse().unwrap();
+        let doc_content = "content";
+        let earlier_timestamp = (Utc::now() - chrono::Duration::seconds(60)).into();
+        let later_timestamp = Utc::now().into();
+        let should = DocumentVersion {
+            url: url.clone(),
+            timestamp: earlier_timestamp,
+        };
+
+        let mut write = repo.create(url.clone(), earlier_timestamp).unwrap();
+        write.write_all(doc_content.as_bytes()).unwrap();
+        let doc = write.done().unwrap();
+        assert_eq!(*doc, should);
+
+        let mut write = repo.create(url.clone(), later_timestamp).unwrap();
+        write.write_all("content".as_bytes()).unwrap();
+        let doc2 = write.done().unwrap();
+        assert_eq!(*doc, *doc2);
+
+        assert_eq!(doc2.into_events().count(), 0);
+    }
+
+    #[test]
+    fn old_duplicate_is_deduplicated() {
+        let repo = test_repo("old_duplicate_is_deduplicated");
+        let url: Url = "http://www.example.org/test/doc".parse().unwrap();
+        let doc_content = "content";
+        let earlier_timestamp = (Utc::now() - chrono::Duration::seconds(60)).into();
+        let later_timestamp = Utc::now().into();
+        let should = DocumentVersion {
+            url: url.clone(),
+            timestamp: earlier_timestamp,
+        };
+
+        let mut write = repo.create(url.clone(), later_timestamp).unwrap();
+        write.write_all("content".as_bytes()).unwrap();
+        let doc = write.done().unwrap();
+
+        let mut write = repo.create(url.clone(), earlier_timestamp).unwrap();
+        write.write_all(doc_content.as_bytes()).unwrap();
+        let doc2 = write.done().unwrap();
+        assert_eq!(*doc2, should);
+
+        assert!(repo.open(&doc).is_err());
+
+        assert_eq!(
+            doc2.into_events().collect::<Vec<_>>(),
+            [
+                DocEvent::Updated {
+                    url: url.clone(),
+                    timestamp: earlier_timestamp
+                },
+                DocEvent::Deleted { url: url.clone(), timestamp: later_timestamp }
+            ]
+        );
     }
 
     #[test]

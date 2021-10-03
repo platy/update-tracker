@@ -2,7 +2,12 @@ use crate::repository::WriteResult;
 
 use super::*;
 use chrono::DateTime;
-use std::{fs, io::{self, Read, Write}, path::{Path, PathBuf}};
+use std::{
+    error::Error,
+    fs,
+    io,
+    path::{Path, PathBuf},
+};
 
 pub struct DocRepo {
     base: PathBuf,
@@ -29,10 +34,20 @@ impl DocRepo {
             let file = fs::File::open(&path)?;
             Ok((dv, file))
         };
-        let (before, after) = self.neighbours(&doc)?;
+        let (before, after) = self
+            .neighbours(&doc)
+            .map_err(|e| NeighbourCheckError::io(e, &"Finding neighbours"))?;
         let identical_before = before.map(open_neighbour).transpose()?;
         let identical_after = after.map(open_neighbour).transpose()?;
-        Ok(TempDoc { is_new_doc, doc, file, repo: self, identical_before, identical_after, buffer: [0; 1024] })
+        Ok(TempDoc {
+            is_new_doc,
+            doc,
+            file,
+            repo: self,
+            identical_before,
+            identical_after,
+            buffer: [0; DUPLICATE_CHECK_BUFFER_SIZE],
+        })
     }
 
     /// Open a [`DocumentVersion`] for reading
@@ -68,7 +83,7 @@ impl DocRepo {
                     } else {
                         before = Some(candidate);
                     }
-                },
+                }
                 std::cmp::Ordering::Greater => {
                     if let Some(after) = &mut after {
                         if candidate.timestamp < after.timestamp {
@@ -77,8 +92,8 @@ impl DocRepo {
                     } else {
                         after = Some(candidate);
                     }
-                },
-                std::cmp::Ordering::Equal => {},
+                }
+                std::cmp::Ordering::Equal => {}
             }
         }
         Ok((before, after))
@@ -90,7 +105,10 @@ impl DocRepo {
         let mut dir: Vec<fs::DirEntry> = fs::read_dir(self.path_for_doc(&doc))?.collect::<io::Result<_>>()?;
         dir.sort_by_key(fs::DirEntry::file_name);
 
-        Ok(dir.into_iter().filter(|e| e.file_type().unwrap().is_file()).rev().map(move |dir_entry| {
+        let files = dir
+            .into_iter()
+            .filter(|e| e.file_type().as_ref().map_or(false, fs::FileType::is_file));
+        Ok(files.rev().map(move |dir_entry| {
             let timestamp = dir_entry
                 .file_name()
                 .to_str()
@@ -148,6 +166,8 @@ pub struct TempDoc<'r> {
 
 impl TempDoc<'_> {
     pub fn done(mut self) -> WriteResult<DocumentVersion, 2> {
+        use io::Write;
+
         self.file.flush()?;
         // TODO check that any neighbour files have reached EOF, ohterwise set them to none
         if let Some((before, _)) = self.identical_before {
@@ -155,10 +175,7 @@ impl TempDoc<'_> {
             before.with_events([None, None])
         } else if let Some((after, _)) = self.identical_after {
             fs::remove_file(self.repo.path_for_version(&after))?;
-            let events = [
-                Some(DocEvent::updated(&self.doc)),
-                Some(DocEvent::deleted(&after)),
-            ];
+            let events = [Some(DocEvent::updated(&self.doc)), Some(DocEvent::deleted(&after))];
             self.doc.with_events(events)
         } else {
             let events = [
@@ -170,31 +187,45 @@ impl TempDoc<'_> {
     }
 
     fn check_duplicate_neighbours(&mut self, buf: &[u8]) -> io::Result<()> {
+        use io::Read;
+
         let mut comparison_buf = &mut self.buffer[..buf.len()];
         if let Some((_, file)) = &mut self.identical_before {
             match file.read_exact(&mut comparison_buf) {
-                Err(e) => if e.kind() == io::ErrorKind::UnexpectedEof {
-                    self.identical_before = None;
-                } else {
-                    return Err(e)
-                },
-                Ok(()) =>
+                Err(e) => {
+                    if e.kind() == io::ErrorKind::UnexpectedEof {
+                        self.identical_before = None;
+                    } else {
+                        return Err(NeighbourCheckError::io(
+                            e,
+                            &"Reading earlier neighbour to check for identity",
+                        ));
+                    }
+                }
+                Ok(()) => {
                     if comparison_buf != buf {
                         self.identical_before = None;
                     }
+                }
             }
         }
         if let Some((_, file)) = &mut self.identical_after {
             match file.read_exact(&mut comparison_buf) {
-                Err(e) => if e.kind() == io::ErrorKind::UnexpectedEof {
-                    self.identical_after = None;
-                } else {
-                    return Err(e)
-                },
-                Ok(()) =>
+                Err(e) => {
+                    if e.kind() == io::ErrorKind::UnexpectedEof {
+                        self.identical_after = None;
+                    } else {
+                        return Err(NeighbourCheckError::io(
+                            e,
+                            &"Reading later neighbour to check for identity",
+                        ));
+                    }
+                }
+                Ok(()) => {
                     if comparison_buf != buf {
                         self.identical_after = None;
                     }
+                }
             }
         }
         Ok(())
@@ -271,9 +302,40 @@ impl<'r> Iterator for IterDocs<'r> {
     }
 }
 
+#[derive(Debug)]
+struct NeighbourCheckError {
+    source: io::Error,
+    description: &'static &'static str,
+}
+
+impl NeighbourCheckError {
+    fn io(e: io::Error, arg: &'static &'static str) -> io::Error {
+        io::Error::new(
+            io::ErrorKind::Other,
+            Self {
+                source: e,
+                description: arg,
+            },
+        )
+    }
+}
+
+impl Error for NeighbourCheckError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
+impl fmt::Display for NeighbourCheckError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "'{}' caused by:", self.description)?;
+        self.source.fmt(f)
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use std::io::Read;
+    use std::io::{Read, Write};
 
     use chrono::Utc;
 
@@ -431,7 +493,10 @@ mod test {
                     url: url.clone(),
                     timestamp: earlier_timestamp
                 },
-                DocEvent::Deleted { url: url.clone(), timestamp: later_timestamp }
+                DocEvent::Deleted {
+                    url: url.clone(),
+                    timestamp: later_timestamp
+                }
             ]
         );
     }

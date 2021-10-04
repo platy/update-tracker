@@ -1,5 +1,8 @@
 use super::*;
-use crate::repository::*;
+use crate::{
+    repository::*,
+    url::{IterUrlRepoLeaves, UrlRepo},
+};
 
 use chrono::{DateTime, FixedOffset};
 use io::Read;
@@ -11,14 +14,13 @@ use std::{
 };
 
 pub struct UpdateRepo {
-    base: PathBuf,
+    repo: UrlRepo,
 }
 
 impl UpdateRepo {
     pub fn new(base: impl AsRef<Path>) -> io::Result<Self> {
-        let base = base.as_ref().to_path_buf();
-        fs::create_dir_all(&base)?;
-        Ok(Self { base })
+        let repo = UrlRepo::new("update", base)?;
+        Ok(Self { repo })
     }
 
     pub fn create(&self, url: Url, timestamp: DateTime<FixedOffset>, change: &str) -> WriteResult<Update, 2> {
@@ -67,14 +69,11 @@ impl UpdateRepo {
 
     /// Returns error if there is no update
     pub fn latest(&self, url: &Url) -> io::Result<DateTime<FixedOffset>> {
-        let dir = fs::read_dir(self.path_for(url, None))?;
+        let dir = self.repo.read_leaves_for_url(url)?;
         let mut latest = None;
         for entry in dir {
-            let entry = entry?;
-            let timestamp: DateTime<FixedOffset> = entry
-                .file_name()
-                .to_str()
-                .ok_or_else::<io::Error, _>(|| io::ErrorKind::Other.into())?
+            let (name, _) = entry?;
+            let timestamp: DateTime<FixedOffset> = name
                 .parse()
                 .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
             if let Some(latest_i) = latest {
@@ -97,14 +96,11 @@ impl UpdateRepo {
 
     /// Lists all updates on the specified url from newest to oldest
     pub fn list_updates(&self, url: Url) -> io::Result<impl DoubleEndedIterator<Item = io::Result<Update>> + '_> {
-        let mut dir: Vec<fs::DirEntry> = fs::read_dir(self.path_for(&url, None))?.collect::<io::Result<_>>()?;
-        dir.sort_by_key(fs::DirEntry::file_name);
+        let files = self.repo.read_leaves_sorted_for_url(&url)?;
 
-        Ok(dir.into_iter().rev().map(move |dir_entry| {
+        Ok(files.rev().map(move |dir_entry| {
             let timestamp = dir_entry
-                .file_name()
-                .to_str()
-                .unwrap()
+                .0
                 .parse()
                 .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
             let change = String::from_utf8(fs::read(&self.path_for(&url, Some(&timestamp)))?)
@@ -114,77 +110,25 @@ impl UpdateRepo {
     }
 
     /// Lists all updates
-    pub fn list_all(&self, base_url: &Url) -> io::Result<IterDocs<'_>> {
-        let root_path: PathBuf = base_url.to_path(&self.base);
-        Ok(IterDocs {
-            repo: self,
-            url: base_url.clone(),
-            stack: vec![fs::read_dir(root_path)?],
+    pub fn list_all(&self, base_url: &Url) -> io::Result<IterUrlRepoLeaves<'_, Update>> {
+        self.repo.list_all(base_url.clone(), |url, name, dir_entry| {
+            let timestamp = name
+                .parse()
+                .map_err(|error| io::Error::new(io::ErrorKind::Other, error))
+                .unwrap();
+            let change = fs::read_to_string(dir_entry.path()).unwrap();
+            Update {
+                update_ref: UpdateRef { url, timestamp },
+                change,
+            }
         })
     }
 
     fn path_for(&self, url: &Url, timestamp: Option<&DateTime<FixedOffset>>) -> PathBuf {
-        let path = url.to_path(&self.base);
         if let Some(timestamp) = timestamp {
-            path.join(timestamp.to_rfc3339())
+            self.repo.leaf_path(url, &timestamp.to_rfc3339())
         } else {
-            path
-        }
-    }
-}
-
-// iterator over all updates in the repo
-pub struct IterDocs<'r> {
-    repo: &'r UpdateRepo,
-    url: Url,
-    stack: Vec<fs::ReadDir>,
-}
-
-impl<'r> Iterator for IterDocs<'r> {
-    type Item = io::Result<Update>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // ascend the tree if at the end of branches and get the next `DirEntry`
-        let mut next_dir_entry = loop {
-            if let Some(iter) = self.stack.last_mut() {
-                if let Some(entry) = iter.next() {
-                    break entry;
-                } else {
-                    self.stack.pop().unwrap();
-                    self.url.pop_path_segment();
-                }
-            } else {
-                return None;
-            }
-        };
-
-        // descend to the next doc
-        loop {
-            match next_dir_entry {
-                Err(err) => break Some(Err(err)),
-                Ok(dir_entry) => {
-                    let file_type = dir_entry.file_type().unwrap();
-                    if file_type.is_dir() {
-                        self.url.push_path_segment(dir_entry.file_name().to_str().unwrap());
-                        let mut dir = fs::read_dir(self.repo.path_for(&self.url, None)).unwrap();
-                        next_dir_entry = dir.next().expect("todo: handle empty dir in repo");
-                        self.stack.push(dir);
-                    } else if file_type.is_file() {
-                        let timestamp = dir_entry
-                            .file_name()
-                            .to_str()
-                            .unwrap()
-                            .parse()
-                            .map_err(|error| io::Error::new(io::ErrorKind::Other, error))
-                            .unwrap();
-                        let url = self.url.clone();
-                        let change = fs::read_to_string(dir_entry.path()).unwrap();
-                        break Some(Ok(Update::new(url, timestamp, change)));
-                    } else {
-                        panic!("symlink in repo");
-                    }
-                }
-            }
+            self.repo.node_path(url)
         }
     }
 }
@@ -197,7 +141,7 @@ mod test {
 
     #[test]
     fn old_update_creates_events_and_becomes_available() {
-        let repo = test_repo("new_update_creates_events_and_becomes_available");
+        let repo = test_repo("update::new_update_creates_events_and_becomes_available");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let timestamp = DateTime::<FixedOffset>::from(Utc::now()) - chrono::Duration::minutes(60);
         let change = "older change";
@@ -229,7 +173,7 @@ mod test {
 
     #[test]
     fn newer_update_creates_event_and_becomes_available() {
-        let repo = test_repo("newer_update_creates_event_and_becomes_available");
+        let repo = test_repo("update::newer_update_creates_event_and_becomes_available");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let change = "new change";
         let timestamp = Utc::now().into();
@@ -272,7 +216,7 @@ mod test {
 
     #[test]
     fn old_update_ensure_creates_events_and_becomes_available() {
-        let repo = test_repo("old_update_ensure_creates_events_and_becomes_available");
+        let repo = test_repo("update::old_update_ensure_creates_events_and_becomes_available");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let timestamp = DateTime::<FixedOffset>::from(Utc::now()) - chrono::Duration::minutes(60);
         let change = "older change";
@@ -303,7 +247,7 @@ mod test {
 
     #[test]
     fn newer_update_ensure_creates_event_and_becomes_available() {
-        let repo = test_repo("newer_update_ensure_creates_event_and_becomes_available");
+        let repo = test_repo("update::newer_update_ensure_creates_event_and_becomes_available");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let change = "new change";
         let timestamp = Utc::now().into();
@@ -346,7 +290,7 @@ mod test {
 
     #[test]
     fn existing_update_ensure_is_noop() {
-        let repo = test_repo("existing_update_ensure_is_noop");
+        let repo = test_repo("update::existing_update_ensure_is_noop");
         let url: Url = "http://www.example.org/test/doc".parse().unwrap();
         let change = "existing change";
         let timestamp = Utc::now().into();

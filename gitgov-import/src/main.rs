@@ -21,19 +21,17 @@ mod extractor;
 fn main() -> Result<()> {
     let base_repo: &str = &dotenv::var("BASE_REPO")?;
     let tag_repo_base = &format!("{}/tag", base_repo);
-    let doc_repo_base: &str = &format!("{}/doc", base_repo);
-    let update_repo_base: &str = &format!("{}/update", base_repo);
+    let url_repo_base: &str = &format!("{}/url", base_repo);
     let _ = remove_dir_all(tag_repo_base);
-    let _ = remove_dir_all(doc_repo_base);
-    let _ = remove_dir_all(update_repo_base);
+    let _ = remove_dir_all(url_repo_base);
 
     let repo = Repository::open(dotenv::var("GITGOV_REPO")?)?;
     let reference = repo.find_reference(&dotenv::var("GITGOV_REF")?)?;
     let last_commit = reference.peel_to_commit()?;
 
-    let mut doc_repo = DocRepo::new(doc_repo_base)?;
+    let mut doc_repo = DocRepo::new(url_repo_base)?;
     let mut tag_repo = TagRepo::new(tag_repo_base)?;
-    let mut update_repo = UpdateRepo::new(update_repo_base)?;
+    let mut update_repo = UpdateRepo::new(url_repo_base)?;
 
     let mut update_imports_skipped = 0;
     let mut updates_imported = 0;

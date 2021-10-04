@@ -1,4 +1,7 @@
-use crate::repository::WriteResult;
+use crate::{
+    repository::WriteResult,
+    url::{IterUrlRepoLeaves, UrlRepo},
+};
 
 use super::*;
 use chrono::DateTime;
@@ -10,14 +13,13 @@ use std::{
 };
 
 pub struct DocRepo {
-    base: PathBuf,
+    repo: UrlRepo,
 }
 
 impl DocRepo {
     pub fn new(base: impl AsRef<Path>) -> io::Result<Self> {
-        let base = base.as_ref().to_path_buf();
-        fs::create_dir_all(&base)?;
-        Ok(Self { base })
+        let repo = UrlRepo::new("docver", base)?;
+        Ok(Self { repo })
     }
 
     /// Create a [`DocumentVersion`] and return a writer to write the content
@@ -101,18 +103,11 @@ impl DocRepo {
 
     /// Lists all updates on the specified url from newest to oldest
     pub fn list_versions(&self, url: Url) -> io::Result<impl Iterator<Item = io::Result<DocumentVersion>>> {
-        let doc = Document { url: url.clone() };
-        let mut dir: Vec<fs::DirEntry> = fs::read_dir(self.path_for_doc(&doc))?.collect::<io::Result<_>>()?;
-        dir.sort_by_key(fs::DirEntry::file_name);
+        let files = self.repo.read_leaves_sorted_for_url(&url)?;
 
-        let files = dir
-            .into_iter()
-            .filter(|e| e.file_type().as_ref().map_or(false, fs::FileType::is_file));
         Ok(files.rev().map(move |dir_entry| {
             let timestamp = dir_entry
-                .file_name()
-                .to_str()
-                .unwrap()
+                .0
                 .parse()
                 .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
             Ok(DocumentVersion {
@@ -123,29 +118,26 @@ impl DocRepo {
     }
 
     /// Lists all updates
-    pub fn list_all(&self, base_url: &Url) -> io::Result<IterDocs<'_>> {
-        let root_path: PathBuf = base_url.to_path(&self.base);
-        Ok(IterDocs {
-            repo: self,
-            url: base_url.clone(),
-            stack: vec![fs::read_dir(root_path)?],
+    pub fn list_all(&self, base_url: &Url) -> io::Result<IterUrlRepoLeaves<'_, DocumentVersion>> {
+        self.repo.list_all(base_url.clone(), |url, name, _| {
+            let timestamp = name
+                .parse()
+                .map_err(|error| io::Error::new(io::ErrorKind::Other, error))
+                .unwrap();
+            DocumentVersion { url, timestamp }
         })
     }
 
     pub fn document_exists(&self, url: &Url) -> io::Result<bool> {
-        match fs::read_dir(self.path_for_doc(&Document { url: url.clone() })) {
+        match self.repo.read_leaves_for_url(url) {
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(false),
             Ok(mut iter) => Ok(iter.next().is_some()),
             Err(err) => Err(err),
         }
     }
 
-    fn path_for_doc(&self, Document { url }: &Document) -> PathBuf {
-        url.to_path(&self.base)
-    }
-
     fn path_for_version(&self, DocumentVersion { url, timestamp }: &DocumentVersion) -> PathBuf {
-        url.to_path(&self.base).join(timestamp.to_rfc3339())
+        self.repo.leaf_path(url, &timestamp.to_rfc3339())
     }
 }
 
@@ -246,63 +238,6 @@ impl io::Write for TempDoc<'_> {
     }
 }
 
-// iterator over all docs in the repo
-pub struct IterDocs<'r> {
-    repo: &'r DocRepo,
-    url: Url,
-    stack: Vec<fs::ReadDir>,
-}
-
-impl<'r> Iterator for IterDocs<'r> {
-    type Item = io::Result<DocumentVersion>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // ascend the tree if at the end of branches and get the next `DirEntry`
-        let mut next_dir_entry = loop {
-            if let Some(iter) = self.stack.last_mut() {
-                if let Some(entry) = iter.next() {
-                    break entry;
-                } else {
-                    self.stack.pop().unwrap();
-                    self.url.pop_path_segment();
-                }
-            } else {
-                return None;
-            }
-        };
-
-        // descend to the next doc
-        loop {
-            match next_dir_entry {
-                Err(err) => break Some(Err(err)),
-                Ok(dir_entry) => {
-                    let file_type = dir_entry.file_type().unwrap();
-                    if file_type.is_dir() {
-                        self.url.push_path_segment(dir_entry.file_name().to_str().unwrap());
-                        let mut dir =
-                            fs::read_dir(self.repo.path_for_doc(&Document { url: self.url.clone() })).unwrap();
-                        next_dir_entry = dir.next().expect("todo: handle empty dir in repo");
-                        self.stack.push(dir);
-                    } else if file_type.is_file() {
-                        let timestamp = dir_entry
-                            .file_name()
-                            .to_str()
-                            .unwrap()
-                            .parse()
-                            .map_err(|error| io::Error::new(io::ErrorKind::Other, error))
-                            .unwrap();
-                        let url = self.url.clone();
-                        break Some(Ok(DocumentVersion { url, timestamp }));
-                    } else {
-                        panic!("symlink in repo");
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
 struct NeighbourCheckError {
     source: io::Error,
     description: &'static &'static str,
@@ -327,6 +262,13 @@ impl Error for NeighbourCheckError {
 }
 
 impl fmt::Display for NeighbourCheckError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "'{}' caused by:", self.description)?;
+        self.source.fmt(f)
+    }
+}
+
+impl fmt::Debug for NeighbourCheckError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "'{}' caused by:", self.description)?;
         self.source.fmt(f)
@@ -552,15 +494,22 @@ mod test {
         }
 
         let mut buf = Vec::new();
-        let result = repo.list_all(&"http://www.example.org/".parse().unwrap()).unwrap();
-        for (&(e_url, e_ts, e_content), actual) in docs.iter().zip(result) {
-            let actual = actual.unwrap();
-            assert_eq!(actual.url().as_str(), e_url);
-            assert_eq!(actual.timestamp.to_rfc3339(), e_ts);
-            buf.clear();
-            repo.open(&actual).unwrap().read_to_end(&mut buf).unwrap();
-            assert_eq!(buf, e_content.as_bytes());
-        }
+        let result: Vec<_> = repo
+            .list_all(&"http://www.example.org/".parse().unwrap())
+            .unwrap()
+            .map(|r| {
+                let doc = r.unwrap();
+                buf.clear();
+                repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
+                (
+                    doc.url().to_string(),
+                    doc.timestamp.to_rfc3339(),
+                    String::from_utf8(buf.clone()).unwrap(),
+                )
+            })
+            .collect();
+        let sliced: Vec<_> = result.iter().map(|(a, b, c)| (&a[..], &b[..], &c[..])).collect();
+        assert_eq!(sliced, docs);
     }
 
     fn test_repo(name: &str) -> DocRepo {

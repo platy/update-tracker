@@ -59,6 +59,12 @@ impl FromStr for Url {
     }
 }
 
+impl AsRef<url::Url> for Url {
+    fn as_ref(&self) -> &url::Url {
+        &self.url
+    }
+}
+
 pub struct UrlRepo {
     repo_key: &'static str,
     base: PathBuf,
@@ -190,42 +196,45 @@ impl<'r, Leaf> Iterator for IterUrlRepoLeaves<'r, Leaf> {
     type Item = io::Result<Leaf>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // ascend the tree if at the end of branches and get the next `DirEntry`
-        let mut next_dir_entry = loop {
-            if let Some(iter) = self.stack.last_mut() {
-                match iter.next() {
-                    Some(entry) => break entry,
-                    None => {
-                        self.stack.pop().unwrap();
-                        self.url.pop_path_segment();
-                    }
-                }
-            } else {
-                return None;
-            }
-        };
-
-        // descend to the next doc
         loop {
-            let kind = next_dir_entry.kind();
-            if let Some(name) = kind.as_node() {
-                self.url.push_path_segment(name);
-                let dir = self.repo.read_dir_sorted_for_url(&self.url);
-                let mut dir = match dir {
-                    Ok(dir) => dir,
-                    Err(err) => break Some(Err(err)),
-                };
-                next_dir_entry = dir.next().expect("todo: handle empty dir");
-                self.stack.push(dir);
-            } else if let Some((repo_key, name)) = kind.as_leaf() {
-                if repo_key == self.repo.repo_key {
-                    let url = self.url.clone();
-                    break Some(Ok((self.make_leaf)(url, name, &next_dir_entry)));
+            // ascend the tree if at the end of branches and get the next `DirEntry`
+            let mut next_dir_entry = loop {
+                if let Some(iter) = self.stack.last_mut() {
+                    match iter.next() {
+                        Some(entry) => break entry,
+                        None => {
+                            self.stack.pop().unwrap();
+                            self.url.pop_path_segment();
+                        }
+                    }
+                } else {
+                    return None;
+                }
+            };
+
+            // descend to the next doc
+            loop {
+                let kind = next_dir_entry.kind();
+                if let Some(name) = kind.as_node() {
+                    self.url.push_path_segment(name);
+                    let dir = self.repo.read_dir_sorted_for_url(&self.url);
+                    let mut dir = match dir {
+                        Ok(dir) => dir,
+                        Err(err) => return Some(Err(err)),
+                    };
+                    next_dir_entry = dir.next().expect("todo: handle empty dir");
+                    self.stack.push(dir);
+                } else if let Some((repo_key, name)) = kind.as_leaf() {
+                    if repo_key == self.repo.repo_key {
+                        let url = self.url.clone();
+                        return Some(Ok((self.make_leaf)(url, name, &next_dir_entry)));
+                    } else {
+                        break
+                    }
                 } else {
                     println!("Ignored file : {:?}", next_dir_entry.file_name());
+                    break
                 }
-            } else {
-                println!("Ignored file : {:?}", next_dir_entry.file_name());
             }
         }
     }

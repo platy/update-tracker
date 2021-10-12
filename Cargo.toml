@@ -5,10 +5,10 @@ authors = ["Mike Bush <platy@njk.onl>"]
 edition = "2018"
 
 [dependencies]
-anyhow = "1.0.40"
 chrono = "0.4.19"
+url = "2.2.0"
+
+[dev-dependencies]
+anyhow = "1.0.40"
 chrono-tz = "0.5.3"
 clap = "2.33.3"
-lazy_static = "1.4.0"
-scraper = "0.12.0"
-url = "2.2.0"

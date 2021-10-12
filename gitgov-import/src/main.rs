@@ -154,10 +154,8 @@ fn import_docs_from_commit(extractor: &Extractor, doc_repo: &mut DocRepo) -> Res
                         diff,
                     ))
                 }
-            },
-            Err(err) => {
-                Err(err).context("error writing doc version")
-            },
+            }
+            Err(err) => Err(err).context("error writing doc version"),
         }?;
     }
     Ok(DocImportStats {

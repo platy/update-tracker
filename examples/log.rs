@@ -41,7 +41,7 @@ where
     O: Ord + From<UpdateRef> + Into<UpdateRef>,
 {
     let tag_repo = TagRepo::new("gitgov-import/out/tag")?;
-    let update_repo = UpdateRepo::new("gitgov-import/out/update")?;
+    let update_repo = UpdateRepo::new("gitgov-import/out/url")?;
     if let Some(tag) = filter.tags.pop() {
         let mut updates: BTreeSet<O> = tag_repo
             .list_updates_in_tag(&tag)?

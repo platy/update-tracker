@@ -6,9 +6,9 @@ use chrono_tz::Tz;
 use git2::{Blob, Commit, Diff, Oid};
 use html5ever::serialize::{HtmlSerializer, Serialize, SerializeOpts, Serializer, TraversalScope};
 use io::Write;
+use lazy_static::lazy_static;
 use scraper::Html;
 
-use update_tracker::doc::iter_history;
 use url::Url;
 pub struct Extractor<'r> {
     repo: &'r git2::Repository,
@@ -252,6 +252,38 @@ impl<'r> DocExtractor<'r> {
             Box::new(empty())
         }
     }
+}
+
+lazy_static! {
+    static ref UPDATE_SELECTOR: scraper::Selector =
+        scraper::Selector::parse(".app-c-published-dates--history li time").unwrap();
+}
+
+/// Iterator over the history of updates in the document
+/// Panics if it doesn't recognise the format
+fn iter_history(doc: &scraper::Html) -> impl Iterator<Item = (DateTime<FixedOffset>, String)> + '_ {
+    doc.select(&UPDATE_SELECTOR).map(|time_elem| {
+        let time =
+            DateTime::parse_from_rfc3339(time_elem.value().attr("datetime").expect("no datetime attribute")).unwrap();
+        let sibling = time_elem // faffing around - this is bullshit
+            .next_sibling()
+            .expect("expected sibling of time element in history");
+        let comment_node = sibling.next_sibling().unwrap_or(sibling);
+        let comment = if let Some(comment_node) = comment_node.value().as_text() {
+            comment_node.trim().to_string()
+        } else {
+            comment_node
+                .children()
+                .next()
+                .unwrap()
+                .value()
+                .as_text()
+                .unwrap()
+                .trim()
+                .to_string()
+        };
+        (time, comment)
+    })
 }
 
 struct NormalizingHtmlSerializer<Wr: Write>(HtmlSerializer<Wr>);

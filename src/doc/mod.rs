@@ -21,6 +21,10 @@ impl DocumentVersion {
     pub fn url(&self) -> &Url {
         &self.url
     }
+
+    pub fn timestamp(&self) -> &DateTime<FixedOffset> {
+        &self.timestamp
+    }
 }
 
 impl Entity for DocumentVersion {

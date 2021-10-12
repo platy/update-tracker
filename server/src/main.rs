@@ -1,7 +1,17 @@
-use std::{borrow::Borrow, cmp::Reverse, fmt, io};
+use std::{
+    borrow::Borrow,
+    cmp::Reverse,
+    fmt,
+    io::{self, Read},
+};
 
+use chrono::{DateTime, FixedOffset};
 use rouille::{router, Request, Response};
-use update_tracker::update::{Update, UpdateRepo};
+use update_tracker::{
+    doc::DocRepo,
+    update::{Update, UpdateRepo},
+    Url,
+};
 
 fn main() {
     const LISTEN_ADDR: &str = "localhost:8080";
@@ -21,7 +31,16 @@ fn main() {
             (GET) (/updates) => {
                 handle_updates(request)
             },
-            _ => Response::html("Not found").with_status_code(404)
+            _ => {
+                if let Some(request) = request.remove_prefix("/update/") {
+                    if let Some((timestamp, url)) = request.url().split_once('/') {
+                        let timestamp: DateTime::<FixedOffset> = timestamp.parse().unwrap();
+                        let url: Url = format!("https://{}", url).parse().unwrap();
+                        return handle_update_page(timestamp, url)
+                    }
+                }
+                Response::html("Not found").with_status_code(404)
+            }
         )
     });
 }
@@ -35,7 +54,50 @@ fn handle_updates(_request: &Request) -> Response {
         .unwrap();
     updates.sort_by_key(|u| Reverse(u.timestamp().to_owned()));
 
-    Response::html(format!(include_str!("template.html"), UpdateList(updates.as_slice())))
+    Response::html(format!(include_str!("updates.html"), UpdateList(updates.as_slice())))
+}
+
+fn handle_update_page(timestamp: DateTime<FixedOffset>, url: Url) -> Response {
+    let update_repo = UpdateRepo::new("../repo/url").unwrap();
+    let update = update_repo.get_update(url.clone(), timestamp).unwrap();
+    let doc_repo = DocRepo::new("../repo/url").unwrap();
+    let current_doc = doc_repo
+        .list_versions(url.clone())
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .filter(|v| v.timestamp() > &timestamp)
+        .min_by_key(|v| *v.timestamp())
+        .unwrap();
+    let mut current_doc_body = String::new();
+    doc_repo
+        .open(&current_doc)
+        .unwrap()
+        .read_to_string(&mut current_doc_body)
+        .unwrap(); // TODO handle none
+    let previous_doc = doc_repo
+        .list_versions(url)
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .filter(|v| v.timestamp() < current_doc.timestamp())
+        .max_by_key(|v| *v.timestamp())
+        .unwrap();
+    let mut previous_doc_body = String::new();
+    doc_repo
+        .open(&previous_doc)
+        .unwrap()
+        .read_to_string(&mut previous_doc_body)
+        .unwrap(); // TODO handle none
+    // TODO html diff
+    Response::html(format!(
+        include_str!("update.html"),
+        update.url(),
+        update.url(),
+        update.timestamp(),
+        update.change(),
+        previous_doc.timestamp(),
+        current_doc.timestamp(),
+        current_doc_body
+    ))
 }
 
 struct UpdateList<'a, U>(&'a [U]);
@@ -52,7 +114,7 @@ impl<'a, U: Borrow<Update>> fmt::Display for UpdateList<'a, U> {
             }
             writeln!(
                 f,
-                r#"<a href="/diff/{}/{}{}">
+                r#"<a href="/update/{}/{}{}">
             <ul>
                 <li class="added">{}</li>
             </ul>

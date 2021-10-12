@@ -1,0 +1,429 @@
+button,
+hr,
+input {
+    overflow: visible
+}
+
+audio,
+canvas,
+progress,
+video {
+    display: inline-block
+}
+
+progress,
+sub,
+sup {
+    vertical-align: baseline
+}
+
+[type=checkbox],
+[type=radio],
+legend {
+    -webkit-box-sizing: border-box;
+    box-sizing: border-box;
+    padding: 0
+}
+
+html {
+    line-height: 1.15;
+    -ms-text-size-adjust: 100%;
+    -webkit-text-size-adjust: 100%
+}
+
+body {
+    margin: 0
+}
+
+article,
+aside,
+details,
+figcaption,
+figure,
+footer,
+header,
+main,
+menu,
+nav,
+section {
+    display: block
+}
+
+h1 {
+    font-size: 2em;
+    margin: .67em 0
+}
+
+figure {
+    margin: 1em 40px
+}
+
+hr {
+    -webkit-box-sizing: content-box;
+    box-sizing: content-box;
+    height: 0
+}
+
+code,
+kbd,
+pre,
+samp {
+    font-family: monospace, monospace;
+    font-size: 1em
+}
+
+a {
+    background-color: transparent;
+    -webkit-text-decoration-skip: objects
+}
+
+abbr[title] {
+    border-bottom: none;
+    text-decoration: underline;
+    -webkit-text-decoration: underline dotted;
+    text-decoration: underline dotted
+}
+
+b,
+strong {
+    font-weight: bolder
+}
+
+dfn {
+    font-style: italic
+}
+
+mark {
+    background-color: #ff0;
+    color: #000
+}
+
+small {
+    font-size: 80%
+}
+
+sub,
+sup {
+    font-size: 75%;
+    line-height: 0;
+    position: relative
+}
+
+sub {
+    bottom: -.25em
+}
+
+sup {
+    top: -.5em
+}
+
+audio:not([controls]) {
+    display: none;
+    height: 0
+}
+
+img {
+    border-style: none
+}
+
+svg:not(:root) {
+    overflow: hidden
+}
+
+button,
+input,
+optgroup,
+select,
+textarea {
+    font-family: sans-serif;
+    font-size: 100%;
+    line-height: 1.15;
+    margin: 0
+}
+
+button,
+select {
+    text-transform: none
+}
+
+[type=reset],
+[type=submit],
+button,
+html [type=button] {
+    -webkit-appearance: button
+}
+
+[type=button]::-moz-focus-inner,
+[type=reset]::-moz-focus-inner,
+[type=submit]::-moz-focus-inner,
+button::-moz-focus-inner {
+    border-style: none;
+    padding: 0
+}
+
+[type=button]:-moz-focusring,
+[type=reset]:-moz-focusring,
+[type=submit]:-moz-focusring,
+button:-moz-focusring {
+    outline: 1px dotted ButtonText
+}
+
+fieldset {
+    padding: .35em .75em .625em
+}
+
+legend {
+    color: inherit;
+    display: table;
+    max-width: 100%;
+    white-space: normal
+}
+
+textarea {
+    overflow: auto
+}
+
+[type=number]::-webkit-inner-spin-button,
+[type=number]::-webkit-outer-spin-button {
+    height: auto
+}
+
+[type=search] {
+    -webkit-appearance: textfield;
+    outline-offset: -2px
+}
+
+[type=search]::-webkit-search-cancel-button,
+[type=search]::-webkit-search-decoration {
+    -webkit-appearance: none
+}
+
+::-webkit-file-upload-button {
+    -webkit-appearance: button;
+    font: inherit
+}
+
+summary {
+    display: list-item
+}
+
+[hidden],
+template {
+    display: none
+}
+
+body,
+html {
+    font: 14px/1.21 Helvetica Neue, arial, sans-serif;
+    font-weight: 400
+}
+
+body {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex
+}
+
+a {
+    color: unset
+}
+
+header {
+    padding: 10px
+}
+
+.app-logo:before {
+    background-image: url(icon-black-trans.png);
+    background-size: 50px;
+    width: 50px;
+    height: 50px;
+    content: "";
+    display: inline-block;
+    vertical-align: text-bottom
+}
+
+.commit-info {
+    background-color: #d7cfe6
+}
+
+.diff {
+    padding: 10px
+}
+
+[data-diff-node] {
+    position: relative
+}
+
+[data-diff-node]+[data-diff-node]:before,
+h3[data-diff-node]:after,
+ol[data-diff-node]:after,
+p[data-diff-node]:after,
+section[data-diff-node]:after,
+ul[data-diff-node]:after {
+    content: "";
+    width: 100%;
+    height: 10px;
+    display: block;
+    position: absolute;
+    z-index: -1
+}
+
+[data-diff-node]+[data-diff-node]:before {
+    top: -10px
+}
+
+section {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
+    flex-direction: column
+}
+
+.open-government-licence span {
+    display: inline-block;
+    margin: 5px;
+    vertical-align: middle
+}
+
+.open-government-licence .logo a {
+    display: block;
+    width: 41px;
+    height: 17px;
+    overflow: hidden;
+    text-indent: -999em;
+    background: url(https://assets.publishing.service.gov.uk/static/images/open-government-licence-c1aedc8257961b938b4c7a21a2b0db3f2716dd9ef782cea73110dc69107c9042.png) 0 0 no-repeat
+}
+
+.commit-log a {
+    -webkit-text-decoration-line: none;
+    text-decoration-line: none
+}
+
+.commit-log a li {
+    -webkit-text-decoration-line: underline;
+    text-decoration-line: underline
+}
+
+.commit-log li.added:before {
+    content: "A";
+    color: green
+}
+
+.commit-log li.modified:before {
+    content: "M";
+    color: #daa520
+}
+
+.commit-log>:nth-child(2n) {
+    background-color: #ffffe0
+}
+
+.commit-log {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-orient: vertical;
+    -webkit-box-direction: normal;
+    -ms-flex-direction: column;
+    flex-direction: column;
+    padding: 0
+}
+
+.commit-log .table-header {
+    display: none
+}
+
+.commit-log ul li:before {
+    padding-right: 10px
+}
+
+.commit-log>* {
+    display: block
+}
+
+.commit-log ul {
+    padding: 5px 10px
+}
+
+.commit-log p {
+    padding: 5px 33px
+}
+
+.commit-log h3 {
+    margin: 0;
+    padding: 15px
+}
+
+.diff [data-diff-node=del],
+.diff [data-diff-node=del]:after,
+.diff [data-diff-node=del]:before,
+.diff del {
+    background-color: #fdc2c2
+}
+
+.diff [data-diff-node=ins],
+.diff [data-diff-node=ins]:after,
+.diff [data-diff-node=ins]:before,
+.diff ins {
+    background-color: #e7ffe7;
+    -webkit-text-decoration-line: none;
+    text-decoration-line: none
+}
+
+@media screen and (min-width:900px) {
+    .commit-log .table-header {
+        display: table-row
+    }
+    .commit-log {
+        display: table;
+        table-layout: fixed
+    }
+    .commit-log>:before {
+        display: table-cell
+    }
+    .commit-log>* {
+        display: table-row
+    }
+    .commit-log p,
+    .commit-log ul {
+        display: table-cell
+    }
+    .commit-log ul li {
+        width: 400px;
+        display: -webkit-box;
+        display: -ms-flexbox;
+        display: flex
+    }
+    .commit-log p {
+        text-overflow: ellipsis;
+        text-indent: -145px;
+        padding-left: 145px
+    }
+}
+
+@media (prefers-color-scheme:dark) {
+    body {
+        background-color: #212121;
+        color: #e0f2f1
+    }
+    .app-logo:before {
+        background-image: url(icon-white-trans.png)
+    }
+    .commit-info {
+        background-color: #6200ea
+    }
+    .commit-log>:nth-child(2n) {
+        background-color: #424242
+    }
+    .diff [data-diff-node=del],
+    .diff del {
+        background-color: #c62828
+    }
+    .diff [data-diff-node=ins],
+    .diff ins {
+        background-color: #1b5e20
+    }
+}

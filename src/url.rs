@@ -2,6 +2,7 @@ use core::fmt;
 use std::{
     fs,
     io,
+    ops::Deref,
     path::{Path, PathBuf},
     str::FromStr,
     vec,
@@ -59,8 +60,10 @@ impl FromStr for Url {
     }
 }
 
-impl AsRef<url::Url> for Url {
-    fn as_ref(&self) -> &url::Url {
+impl Deref for Url {
+    type Target = url::Url;
+
+    fn deref(&self) -> &Self::Target {
         &self.url
     }
 }
@@ -229,11 +232,11 @@ impl<'r, Leaf> Iterator for IterUrlRepoLeaves<'r, Leaf> {
                         let url = self.url.clone();
                         return Some(Ok((self.make_leaf)(url, name, &next_dir_entry)));
                     } else {
-                        break
+                        break;
                     }
                 } else {
                     println!("Ignored file : {:?}", next_dir_entry.file_name());
-                    break
+                    break;
                 }
             }
         }

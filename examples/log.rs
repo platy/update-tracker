@@ -8,7 +8,7 @@ use std::{
     ops::{Bound, RangeBounds},
 };
 
-use update_tracker::{
+use update_repo::{
     tag::{Tag, TagRepo},
     update::{Update, UpdateRef, UpdateRefByTimestamp, UpdateRefByUrl, UpdateRepo},
 };

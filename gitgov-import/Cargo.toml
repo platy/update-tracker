@@ -5,7 +5,7 @@ authors = ["Mike Bush <platy@njk.onl>"]
 edition = "2018"
 
 [dependencies]
-update-tracker = { path = ".." }
+update-repo = { path = ".." }
 
 anyhow = "1.0.33"
 chrono = "0.4.19"

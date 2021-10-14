@@ -9,7 +9,7 @@ use std::{
 use anyhow::{ensure, format_err, Context, Result};
 use extractor::Extractor;
 use git2::Repository;
-use update_tracker::{
+use update_repo::{
     doc::{DocEvent, DocRepo},
     tag::TagRepo,
     update::UpdateRepo,

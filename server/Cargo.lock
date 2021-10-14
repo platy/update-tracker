@@ -164,6 +164,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "htmldiff"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35b798ad26682ba974f035682fa7512c6b092262fc924f17cbb8fa54e464ea50"
+
+[[package]]
 name = "httparse"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -436,15 +442,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "server"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "rouille",
- "update-tracker",
-]
-
-[[package]]
 name = "sha1"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -572,11 +569,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ccb82d61f80a663efe1f787a51b16b5a51e3314d6ac365b08639f52387b33f3"
 
 [[package]]
-name = "update-tracker"
+name = "update-repo"
 version = "0.1.0"
 dependencies = [
  "chrono",
  "url",
+]
+
+[[package]]
+name = "update-tracker"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "htmldiff",
+ "rouille",
+ "update-repo",
 ]
 
 [[package]]

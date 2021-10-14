@@ -1,9 +1,10 @@
 [package]
-name = "server"
+name = "update-tracker"
 version = "0.1.0"
 edition = "2018"
 
 [dependencies]
 chrono = "0.4.19"
+htmldiff = "0.1.0"
 rouille = "3.3.1"
-update-tracker = { path = ".." }
+update-repo = { path = ".." }

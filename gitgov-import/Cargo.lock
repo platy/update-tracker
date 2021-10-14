@@ -412,7 +412,7 @@ dependencies = [
  "lazy_static 1.4.0",
  "prettydiff",
  "scraper",
- "update-tracker",
+ "update-repo",
  "url",
 ]
 
@@ -1481,7 +1481,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "update-tracker"
+name = "update-repo"
 version = "0.1.0"
 dependencies = [
  "chrono",

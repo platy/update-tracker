@@ -52,10 +52,10 @@ fn main() {
     });
 }
 
-fn handle_updates(_request: &Request, data: &Data) -> Response {
+fn handle_updates(request: &Request, data: &Data) -> Response {
     let updates = data.list_updates();
 
-    Response::html(format!(include_str!("updates.html"), UpdateList(updates.as_slice())))
+    Response::html(format!(include_str!("updates.html"), UpdateList(updates, request)))
 }
 
 fn handle_update_page(timestamp: &str, url: &str, data: &Data) -> Result<Response, Error> {
@@ -171,12 +171,38 @@ impl<T: FromStr> FromStr for MaybeEmpty<T> {
     }
 }
 
-struct UpdateList<'a, U>(&'a [U]);
+/// A list of updates which can be dispalyed as html in reverse order
+struct UpdateList<'a, U>(&'a [U], &'a Request);
 
 impl<'a, U: Borrow<Update>> fmt::Display for UpdateList<'a, U> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let offset = self
+            .1
+            .get_param("offset")
+            .and_then(|offset| offset.parse().ok())
+            .unwrap_or(0);
+        let limit = self
+            .1
+            .get_param("limit")
+            .and_then(|limit| limit.parse().ok())
+            .unwrap_or(200);
+
+        let items = self.0;
+        let start = items.len() - offset;
+        let items = &items[start.checked_sub(limit).unwrap_or_default()..start];
+
         let mut current_date = None;
-        for update in self.0 {
+        writeln!(
+            f,
+            r#"
+    <ol class="commit-log">
+        <tr class="table-header">
+            <th>Filename on gov.uk</th>
+            <th>Change description</th>
+        </tr>"#
+        )?;
+
+        for update in items.iter().rev() {
             let update = update.borrow();
             let update_date = update.timestamp().date();
             if Some(update_date) != current_date {
@@ -200,6 +226,44 @@ impl<'a, U: Borrow<Update>> fmt::Display for UpdateList<'a, U> {
             )
             .unwrap();
         }
+
+        let existing_pairs = self.1.raw_query_string().to_owned();
+        let mut href = form_urlencoded::Serializer::new(self.1.url() + "?");
+        for (name, value) in form_urlencoded::parse(existing_pairs.as_bytes()) {
+            if name != "offset" {
+                href.append_pair(&name, &value);
+            }
+        }
+        let href = href.finish();
+
+        writeln!(
+            f,
+            "</ol>
+        <div>"
+        )?;
+        if offset > 0 {
+            writeln!(
+                f,
+                r#"<a href="{href}&offset={prev_offset}">prev</a>"#,
+                href = href,
+                prev_offset = offset.checked_sub(limit).unwrap_or_default(),
+            )?;
+        }
+        writeln!(
+            f,
+            r#" Page {page_num} of {page_count} "#,
+            page_num = offset / limit + 1,
+            page_count = self.0.len() / limit + 1
+        )?;
+        if offset + limit <= self.0.len() {
+            writeln!(
+                f,
+                r#"<a href="{href}&offset={next_offset}">next</a>"#,
+                href = href,
+                next_offset = offset + limit,
+            )?;
+        }
+        writeln!(f, "</div>")?;
         Ok(())
     }
 }

@@ -1,5 +1,4 @@
 use std::{
-    cmp::Reverse,
     io::{self, Read},
     ops::Deref,
 };
@@ -15,24 +14,30 @@ use update_repo::{
 pub(crate) struct Data {
     update_repo: UpdateRepo,
     doc_repo: DocRepo,
+    updates: Vec<Update>,
 }
 
 impl Data {
     pub fn new() -> Self {
         let update_repo = UpdateRepo::new("../repo/url").unwrap();
         let doc_repo = DocRepo::new("../repo/url").unwrap();
-        Self { update_repo, doc_repo }
-    }
 
-    pub fn list_updates(&self) -> Vec<Update> {
-        let mut updates: Vec<_> = self
-            .update_repo
+        let mut updates: Vec<_> = update_repo
             .list_all(&"https://www.gov.uk/".parse().unwrap())
             .unwrap()
             .collect::<io::Result<_>>()
             .unwrap();
-        updates.sort_by_key(|u| Reverse(u.timestamp().to_owned()));
-        updates
+        updates.sort_by_key(|u| u.timestamp().to_owned());
+
+        Self {
+            update_repo,
+            doc_repo,
+            updates,
+        }
+    }
+
+    pub fn list_updates(&self) -> &[Update] {
+        &self.updates[..]
     }
 
     pub fn get_update(&self, url: &Url, timestamp: DateTime<FixedOffset>) -> io::Result<Update> {

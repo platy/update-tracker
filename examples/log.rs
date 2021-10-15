@@ -28,7 +28,7 @@ fn main() -> Result<()> {
     eprintln!("Searching {:?}", &filter);
 
     match matches.value_of("ORDER") {
-        Some("u" | "url") => list_updates::<UpdateRefByUrl>(filter)?,
+        Some("u" | "url") => list_updates::<UpdateRefByUrl<_>>(filter)?,
         Some("t" | "time" | "timestamp") | None => list_updates::<UpdateRefByTimestamp>(filter)?,
         Some(other) => bail!("Unknown sort ordering '{}', expected 'url' or 'timestamp'", other),
     }

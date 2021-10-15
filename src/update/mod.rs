@@ -1,4 +1,4 @@
-use std::{fmt, str::FromStr};
+use std::{borrow::Borrow, fmt, str::FromStr};
 
 use chrono::{DateTime, FixedOffset};
 
@@ -30,6 +30,10 @@ impl Update {
 
     pub fn change(&self) -> &str {
         &self.change
+    }
+
+    pub fn update_ref(&self) -> &UpdateRef {
+        &self.update_ref
     }
 }
 
@@ -126,30 +130,38 @@ impl fmt::Display for UpdateRefParseError {
     }
 }
 
-#[derive(PartialEq, Eq)]
-pub struct UpdateRefByUrl(pub UpdateRef);
+pub struct UpdateRefByUrl<U>(pub U);
 
-impl Ord for UpdateRefByUrl {
+impl<U: Borrow<UpdateRef>> Eq for UpdateRefByUrl<U> {}
+
+impl<L: Borrow<UpdateRef>, R: Borrow<UpdateRef>> PartialEq<UpdateRefByUrl<R>> for UpdateRefByUrl<L> {
+    fn eq(&self, other: &UpdateRefByUrl<R>) -> bool {
+        self.0.borrow() == other.0.borrow()
+    }
+}
+
+impl<U: Borrow<UpdateRef>> Ord for UpdateRefByUrl<U> {
     fn cmp(&self, UpdateRefByUrl(other): &Self) -> std::cmp::Ordering {
-        let UpdateRefByUrl(UpdateRef { url, timestamp }) = self;
-        url.cmp(&other.url).then_with(|| timestamp.cmp(&other.timestamp))
+        let UpdateRef { url, timestamp } = self.0.borrow();
+        url.cmp(&other.borrow().url).then_with(|| timestamp.cmp(&other.borrow().timestamp))
     }
 }
 
-impl PartialOrd for UpdateRefByUrl {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
+impl<L: Borrow<UpdateRef>, R: Borrow<UpdateRef>> PartialOrd<UpdateRefByUrl<R>> for UpdateRefByUrl<L> {
+    fn partial_cmp(&self, UpdateRefByUrl(other): &UpdateRefByUrl<R>) -> Option<std::cmp::Ordering> {
+        let UpdateRef { url, timestamp } = self.0.borrow();
+        Some(url.cmp(&other.borrow().url).then_with(|| timestamp.cmp(&other.borrow().timestamp)))
     }
 }
 
-impl From<UpdateRef> for UpdateRefByUrl {
+impl From<UpdateRef> for UpdateRefByUrl<UpdateRef> {
     fn from(u: UpdateRef) -> Self {
         UpdateRefByUrl(u)
     }
 }
 
-impl From<UpdateRefByUrl> for UpdateRef {
-    fn from(UpdateRefByUrl(u): UpdateRefByUrl) -> Self {
+impl From<UpdateRefByUrl<UpdateRef>> for UpdateRef {
+    fn from(UpdateRefByUrl(u): UpdateRefByUrl<UpdateRef>) -> Self {
         u
     }
 }

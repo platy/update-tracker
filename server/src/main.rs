@@ -55,7 +55,7 @@ fn main() {
 fn handle_updates(request: &Request, data: &Data) -> Response {
     let updates = data.list_updates();
 
-    let mut results = UpdateList::new(updates.iter().rev(), request);
+    let mut results = UpdateList::new(updates.iter().copied().rev(), request, data);
     let etag = results.etag();
     Response::html(format!(include_str!("updates.html"), results)).with_etag(request, etag)
 }
@@ -172,7 +172,8 @@ impl<T: FromStr> FromStr for MaybeEmpty<T> {
 }
 
 /// A paginated list of updates which can be displayed as html
-struct UpdateList<'a, Us: Iterator<Item = &'a Update>> {
+struct UpdateList<'a, 'd, Us: Iterator<Item = &'a Update>> {
+    data: &'d Data,
     items: std::iter::Peekable<std::iter::Take<std::iter::Skip<Us>>>,
     page_num: usize,
     page_count: usize,
@@ -183,8 +184,8 @@ struct UpdateList<'a, Us: Iterator<Item = &'a Update>> {
     filtered_count: usize,
 }
 
-impl<'a, Us: Iterator<Item = &'a Update>> UpdateList<'a, Us> {
-    fn new(items: impl IntoIterator<IntoIter = Us>, request: &Request) -> Self {
+impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
+    fn new(items: impl IntoIterator<IntoIter = Us>, request: &Request, data: &'d Data) -> Self {
         let offset = request
             .get_param("offset")
             .and_then(|offset| offset.parse().ok())
@@ -211,6 +212,7 @@ impl<'a, Us: Iterator<Item = &'a Update>> UpdateList<'a, Us> {
         let href = href.finish();
 
         Self {
+            data,
             items,
             page_num,
             page_count,
@@ -223,7 +225,7 @@ impl<'a, Us: Iterator<Item = &'a Update>> UpdateList<'a, Us> {
     }
 }
 
-impl<'a, Us: Iterator<Item = &'a Update>> UpdateList<'a, Us> {
+impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
     fn etag(&mut self) -> String {
         self.items
             .peek()
@@ -231,17 +233,18 @@ impl<'a, Us: Iterator<Item = &'a Update>> UpdateList<'a, Us> {
     }
 }
 
-impl<'a, Us: Iterator<Item = &'a Update> + Clone> fmt::Display for UpdateList<'a, Us> {
+impl<'a, 'd, Us: Iterator<Item = &'a Update> + Clone> fmt::Display for UpdateList<'a, 'd, Us> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut current_date = None;
         writeln!(
             f,
             r#"
     <ol class="commit-log">
-        <tr class="table-header">
-            <th>Filename on gov.uk</th>
-            <th>Change description</th>
-        </tr>"#
+        <div class="table-header">
+            <div>Filename on gov.uk</div>
+            <div>Change description</div>
+            <div>Tags</div>
+        </div>"#
         )?;
 
         let mut count_on_page = 0;
@@ -256,9 +259,12 @@ impl<'a, Us: Iterator<Item = &'a Update> + Clone> fmt::Display for UpdateList<'a
                 f,
                 r#"<a href="/update/{}/{}{}">
             <ul>
-                <li class="added">{}</li>
+                <li>{}</li>
             </ul>
-            <p>{} {} [TODO: TAGS]</p>
+            <p>{} {}</p>
+            <ul class="tags">
+                {tags}
+            </ul>
         </a>"#,
                 update.timestamp().to_rfc3339(),
                 update.url().host_str().unwrap_or_default(),
@@ -266,6 +272,12 @@ impl<'a, Us: Iterator<Item = &'a Update> + Clone> fmt::Display for UpdateList<'a
                 update.url().path(),
                 update.timestamp().time().to_string(),
                 update.change(),
+                tags = self
+                    .data
+                    .get_tags(update.update_ref())
+                    .iter()
+                    .map(|t| format!("<li>{}</li>", t.name()))
+                    .collect::<String>(),
             )
             .unwrap();
             count_on_page += 1;

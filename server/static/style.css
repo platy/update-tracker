@@ -352,7 +352,7 @@ section {
     padding: 5px 33px
 }
 
-.commit-log h3 {
+.commit-log .day-header {
     margin: 0;
     padding: 15px
 }
@@ -377,6 +377,9 @@ section {
     .commit-log .table-header {
         display: table-row
     }
+    .commit-log .table-header * {
+        display: table-cell
+    }
     .commit-log {
         display: table;
         table-layout: fixed
@@ -399,8 +402,8 @@ section {
     }
     .commit-log p {
         text-overflow: ellipsis;
-        text-indent: -145px;
-        padding-left: 145px
+        text-indent: -55px;
+        padding-left: 55px;
     }
 }
 

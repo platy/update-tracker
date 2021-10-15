@@ -20,6 +20,7 @@ pub(crate) struct Data {
     updates: Vec<&'static Update>,
     /// all updates in url and then timestamp order with tags
     tags: BTreeMap<UpdateRefByUrl<UpdateRef>, (&'static Update, Vec<&'static Tag>)>,
+    all_tags: Vec<String>,
 }
 
 impl Data {
@@ -37,14 +38,14 @@ impl Data {
         updates.sort_by_key(|u| u.timestamp().to_owned());
 
         let tag_repo = TagRepo::new("../repo/tag").unwrap();
+        let mut all_tags = vec![];
         for tag in tag_repo.list_tags().unwrap() {
             println!("Tag {}", tag.name());
+            all_tags.push(tag.name().to_owned());
             let tag = &*Box::leak(Box::new(tag));
             for ur in tag_repo.list_updates_in_tag(tag).unwrap() {
                 let ur = ur.unwrap();
-                let (_update, tags) = tags
-                    .get_mut(&UpdateRefByUrl(ur.clone()))
-                    .expect("no tag entry for ref");
+                let (_update, tags) = tags.get_mut(&UpdateRefByUrl(ur.clone())).expect("no tag entry for ref");
                 tags.push(tag);
             }
         }
@@ -54,6 +55,7 @@ impl Data {
             doc_repo,
             updates,
             tags,
+            all_tags,
         }
     }
 
@@ -84,6 +86,10 @@ impl Data {
 
     pub fn get_tags(&self, ur: &UpdateRef) -> &[&Tag] {
         self.tags.get(&UpdateRefByUrl(ur.clone())).unwrap().1.as_slice()
+    }
+
+    pub fn all_tags(&self) -> impl Iterator<Item = &String> {
+        self.all_tags.iter()
     }
 }
 

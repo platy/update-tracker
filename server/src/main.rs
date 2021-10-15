@@ -2,7 +2,7 @@ use std::{borrow::Borrow, fmt, str::FromStr};
 
 use chrono::{DateTime, FixedOffset};
 use rouille::{router, Request, Response};
-use update_repo::{doc::DocumentVersion, update::Update, Url};
+use update_repo::{doc::DocumentVersion, tag::Tag, update::Update, Url};
 
 mod data;
 mod error;
@@ -53,11 +53,39 @@ fn main() {
 }
 
 fn handle_updates(request: &Request, data: &Data) -> Response {
-    let updates = data.list_updates();
+    let updates = data.list_updates().iter().copied().rev();
 
-    let mut results = UpdateList::new(updates.iter().copied().rev(), request, data);
+    if let Some(tag) = request.get_param("tag").filter(|t| !t.is_empty()) {
+        let tag = Tag::new(tag);
+        let updates = updates.filter(|u| data.get_tags(u.update_ref()).contains(&&tag));
+        updates_page_response(updates, request, data)
+    } else {
+        updates_page_response(updates, request, data)
+    }
+}
+
+fn updates_page_response<'a>(
+    updates: impl Iterator<Item = &'a Update> + Clone,
+    request: &Request,
+    data: &Data,
+) -> Response {
+    let mut results = UpdateList::new(updates, request, data);
     let etag = results.etag();
-    Response::html(format!(include_str!("updates.html"), results)).with_etag(request, etag)
+    Response::html(format!(
+        include_str!("updates.html"),
+        results,
+        tag_options = data
+            .all_tags()
+            .map(|tag| format!(
+                r#"<option {selected}>{tag}</option>"#,
+                tag = tag,
+                selected = (request.get_param("tag").as_ref() == Some(tag))
+                    .then(|| "selected")
+                    .unwrap_or_default()
+            ))
+            .collect::<String>()
+    ))
+    .with_etag(request, etag)
 }
 
 fn handle_update_page(request: &Request, timestamp: &str, url: &str, data: &Data) -> Result<Response, Error> {

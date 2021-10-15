@@ -55,8 +55,9 @@ fn main() {
 fn handle_updates(request: &Request, data: &Data) -> Response {
     let updates = data.list_updates();
 
-    let results = UpdateList(updates, request);
-    Response::html(format!(include_str!("updates.html"), results)).with_etag(request, results.etag())
+    let mut results = UpdateList::new(updates.iter().rev(), request);
+    let etag = results.etag();
+    Response::html(format!(include_str!("updates.html"), results)).with_etag(request, etag)
 }
 
 fn handle_update_page(request: &Request, timestamp: &str, url: &str, data: &Data) -> Result<Response, Error> {
@@ -170,18 +171,68 @@ impl<T: FromStr> FromStr for MaybeEmpty<T> {
     }
 }
 
-/// A list of updates which can be dispalyed as html in reverse order
-struct UpdateList<'a, U>(&'a [U], &'a Request);
+/// A paginated list of updates which can be displayed as html
+struct UpdateList<'a, Us: Iterator<Item = &'a Update>> {
+    items: std::iter::Peekable<std::iter::Take<std::iter::Skip<Us>>>,
+    page_num: usize,
+    page_count: usize,
+    next_offset: Option<usize>,
+    prev_offset: Option<usize>,
+    href: String,
+    offset: usize,
+    filtered_count: usize,
+}
 
-impl<'a, U: Borrow<Update>> fmt::Display for UpdateList<'a, U> {
+impl<'a, Us: Iterator<Item = &'a Update>> UpdateList<'a, Us> {
+    fn new(items: impl IntoIterator<IntoIter = Us>, request: &Request) -> Self {
+        let offset = request
+            .get_param("offset")
+            .and_then(|offset| offset.parse().ok())
+            .unwrap_or(0);
+        let limit = request
+            .get_param("limit")
+            .and_then(|limit| limit.parse().ok())
+            .unwrap_or(200);
+
+        let items = items.into_iter();
+        let filtered_count = items.size_hint().0; // should require `TrustedLen`
+        let items = items.skip(offset).take(limit).peekable();
+
+        let page_num = offset / limit + 1;
+        let page_count = filtered_count / limit + 1;
+
+        let existing_pairs = request.raw_query_string().to_owned();
+        let mut href = form_urlencoded::Serializer::new(request.url() + "?");
+        for (name, value) in form_urlencoded::parse(existing_pairs.as_bytes()) {
+            if name != "offset" {
+                href.append_pair(&name, &value);
+            }
+        }
+        let href = href.finish();
+
+        Self {
+            items,
+            page_num,
+            page_count,
+            prev_offset: (offset > 0).then(|| offset.checked_sub(limit).unwrap_or_default()),
+            next_offset: (offset + limit <= filtered_count).then(|| offset + limit),
+            href,
+            offset,
+            filtered_count,
+        }
+    }
+}
+
+impl<'a, Us: Iterator<Item = &'a Update>> UpdateList<'a, Us> {
+    fn etag(&mut self) -> String {
+        self.items
+            .peek()
+            .map_or(String::new(), |u| format!("{}", u.timestamp()))
+    }
+}
+
+impl<'a, Us: Iterator<Item = &'a Update> + Clone> fmt::Display for UpdateList<'a, Us> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let offset = self.offset();
-        let limit = self.limit();
-
-        let items = self.0;
-        let start = items.len() - offset;
-        let items = &items[start.checked_sub(limit).unwrap_or_default()..start];
-
         let mut current_date = None;
         writeln!(
             f,
@@ -193,7 +244,8 @@ impl<'a, U: Borrow<Update>> fmt::Display for UpdateList<'a, U> {
         </tr>"#
         )?;
 
-        for update in items.iter().rev() {
+        let mut count_on_page = 0;
+        for update in self.items.clone() {
             let update = update.borrow();
             let update_date = update.timestamp().date();
             if Some(update_date) != current_date {
@@ -216,66 +268,40 @@ impl<'a, U: Borrow<Update>> fmt::Display for UpdateList<'a, U> {
                 update.change(),
             )
             .unwrap();
+            count_on_page += 1;
         }
-
-        let existing_pairs = self.1.raw_query_string().to_owned();
-        let mut href = form_urlencoded::Serializer::new(self.1.url() + "?");
-        for (name, value) in form_urlencoded::parse(existing_pairs.as_bytes()) {
-            if name != "offset" {
-                href.append_pair(&name, &value);
-            }
-        }
-        let href = href.finish();
 
         writeln!(
             f,
             "</ol>
         <div>"
         )?;
-        if offset > 0 {
+        if let Some(prev_offset) = self.prev_offset {
             writeln!(
                 f,
                 r#"<a href="{href}&offset={prev_offset}">prev</a>"#,
-                href = href,
-                prev_offset = offset.checked_sub(limit).unwrap_or_default(),
+                href = self.href,
+                prev_offset = prev_offset,
             )?;
         }
         writeln!(
             f,
-            r#" Page {page_num} of {page_count} "#,
-            page_num = offset / limit + 1,
-            page_count = self.0.len() / limit + 1
+            r#" Page {page_num} of {page_count} (Updates {offset} to {last} of {total}) "#,
+            page_num = self.page_num,
+            page_count = self.page_count,
+            offset = self.offset + 1,
+            last = self.offset + count_on_page,
+            total = self.filtered_count,
         )?;
-        if offset + limit <= self.0.len() {
+        if let Some(next_offset) = self.next_offset {
             writeln!(
                 f,
                 r#"<a href="{href}&offset={next_offset}">next</a>"#,
-                href = href,
-                next_offset = offset + limit,
+                href = self.href,
+                next_offset = next_offset,
             )?;
         }
         writeln!(f, "</div>")?;
         Ok(())
-    }
-}
-
-impl<'a, U: Borrow<Update>> UpdateList<'a, U> {
-    fn limit(&self) -> usize {
-        self.1
-            .get_param("limit")
-            .and_then(|limit| limit.parse().ok())
-            .unwrap_or(200)
-    }
-
-    fn offset(&self) -> usize {
-        self.1
-            .get_param("offset")
-            .and_then(|offset| offset.parse().ok())
-            .unwrap_or(0)
-    }
-
-    fn etag(&self) -> String {
-        let offset = self.offset();
-        format!("{}", self.0[self.0.len() - offset - 1].borrow().timestamp())
     }
 }

@@ -1,15 +1,18 @@
-use std::{borrow::Borrow, fmt, str::FromStr};
+use std::{borrow::Borrow, fmt, ops::Deref, str::FromStr};
 
 use chrono::{DateTime, FixedOffset};
-use rouille::{router, Request, Response};
+use form_urlencoded::Target;
+use rouille::{find_route, Request, Response};
 use update_repo::{doc::DocumentVersion, tag::Tag, update::Update, Url};
 
+#[macro_use]
+mod web_macros;
 mod data;
 mod error;
 
 use data::Data;
 
-use crate::error::{CouldFind, Error};
+use crate::error::CouldFind;
 
 const LISTEN_ADDR: &str = "localhost:8080";
 
@@ -21,46 +24,95 @@ fn main() {
     println!("Listen on http://{}", LISTEN_ADDR);
 
     rouille::start_server_with_pool(LISTEN_ADDR, None, move |request| {
-        {
-            let assets_match = rouille::match_assets(request, "./static");
-            if assets_match.is_success() {
-                return assets_match;
-            }
-        }
-        router!(request,
-            (GET) (/) => {
-                Response::redirect_302("/updates")
-            },
-            (GET) (/updates) => {
-                handle_updates(request, &data)
-            },
-            _ => {
-                if let Some(request) = request.remove_prefix("/update/") {
-                    if let Some((timestamp, url)) = request.url().split_once('/') {
-                        return handle_update_page(&request, timestamp, url, &data).unwrap_or_else(Into::into)
-                    }
-                } else if let Some(request) = request.remove_prefix("/diff/") {
-                    let url = request.url();
-                    let mut split = url.splitn(3, '/');
-                    if let (Some(from), Some(to), Some(url)) = (split.next(), split.next(), split.next()) {
-                        return handle_doc_diff_page(&request, from, to, url, &data).unwrap_or_else(Into::into)
-                    }
-                }
-                Response::html("Not found").with_status_code(404)
-            }
+        find_route!(
+            rouille::match_assets(request, "./static"),
+            handle_root(request),
+            handle_updates(request, &data),
+            handle_update(request, &data),
+            handle_doc_diff_page(request, &data)
         )
     });
 }
 
-fn handle_updates(request: &Request, data: &Data) -> Response {
-    let updates = data.list_updates().iter().copied().rev();
+route! {
+    (GET /)
+    handle_root(request: &Request) {
+        Ok(Response::redirect_302("/updates"))
+    }
+}
 
-    if let Some(tag) = request.get_param("tag").filter(|t| !t.is_empty()) {
-        let tag = Tag::new(tag);
-        let updates = updates.filter(|u| data.get_tags(u.update_ref()).contains(&&tag));
-        updates_page_response(updates, request, data)
-    } else {
-        updates_page_response(updates, request, data)
+route! {
+    (GET /updates )
+    handle_updates(request: &Request, data: &Data) {
+        let updates = data.list_updates().iter().copied().rev();
+
+        Ok(if let Some(tag) = request.get_param("tag").filter(|t| !t.is_empty()) {
+            let tag = Tag::new(tag);
+            let updates = updates.filter(|u| data.get_tags(u.update_ref()).contains(&&tag));
+            updates_page_response(updates,request,data)
+        } else {
+            updates_page_response(updates,request,data)
+        })
+    }
+}
+
+route! {
+    (GET /update/{timestamp: DateTime<FixedOffset>}/{url: HttpsStrippedUrl})
+    handle_update(request: &Request, data: &Data) {
+        // get update
+        let update = data.get_update(&url, timestamp).could_find("Update")?;
+
+        // get doc version before & after update
+        let current_doc = data.iter_doc_versions(&url).and_then(|iter| {
+            iter.filter(|v| v.timestamp() > &timestamp)
+                .min_by_key(|v| *v.timestamp())
+        });
+        let previous_doc = data.iter_doc_versions(&url).and_then(|iter| {
+            iter.filter(|v| v.timestamp() < current_doc.as_ref().map_or(&timestamp, DocumentVersion::timestamp))
+                .max_by_key(|v| *v.timestamp())
+        });
+
+        // do the diff
+        let (diff_url, from_ts, to_ts, body) = diff_fields(&url, previous_doc.as_ref(), current_doc.as_ref(), data);
+
+        Ok(Response::html(format!(
+            include_str!("update.html"),
+            orig_url = &*url,
+            timestamp = update.timestamp(),
+            change = update.change(),
+            diff_url = diff_url,
+            doc_from = from_ts.map_or(String::new(), |v| v.to_string()),
+            doc_to = to_ts.map_or(String::new(), |v| v.to_string()),
+            body = body,
+        ))
+        .with_etag(
+            request,
+            format!("{} {}", previous_doc.is_some(), current_doc.is_some()),
+        ))
+    }
+}
+
+route! {
+    (GET /diff/{from: MaybeEmpty<DateTime<FixedOffset>>}/{to: MaybeEmpty<DateTime<FixedOffset>>}/{url: HttpsStrippedUrl})
+    handle_doc_diff_page(request: &Request, data: &Data) {
+        // get doc version from
+        let from_doc = from.0.and_then(|ts| data.get_doc_version(&url, ts).ok());
+
+        // get doc version to
+        let to_doc = to.0.and_then(|ts| data.get_doc_version(&url, ts).ok());
+
+        // do the diff
+        let (diff_url, from_ts, to_ts, body) = diff_fields(&url, from_doc.as_ref(), to_doc.as_ref(), data);
+
+        Ok(Response::html(format!(
+            include_str!("diff.html"),
+            orig_url = &*url,
+            diff_url = diff_url,
+            doc_from = from_ts.map_or(String::new(), |v| v.to_string()),
+            doc_to = to_ts.map_or(String::new(), |v| v.to_string()),
+            body = body,
+        ))
+        .with_etag(request, format!("{} {}", from_doc.is_some(), to_doc.is_some())))
     }
 }
 
@@ -86,68 +138,6 @@ fn updates_page_response<'a>(
             .collect::<String>()
     ))
     .with_etag(request, etag)
-}
-
-fn handle_update_page(request: &Request, timestamp: &str, url: &str, data: &Data) -> Result<Response, Error> {
-    let timestamp: DateTime<FixedOffset> = timestamp.parse().or(Err(Error::NotFound("Update")))?;
-    let url: Url = format!("https://{}", url).parse().unwrap();
-
-    // get update
-    let update = data.get_update(&url, timestamp).could_find("Update")?;
-
-    // get doc version before & after update
-    let current_doc = data.iter_doc_versions(&url).and_then(|iter| {
-        iter.filter(|v| v.timestamp() > &timestamp)
-            .min_by_key(|v| *v.timestamp())
-    });
-    let previous_doc = data.iter_doc_versions(&url).and_then(|iter| {
-        iter.filter(|v| v.timestamp() < current_doc.as_ref().map_or(&timestamp, DocumentVersion::timestamp))
-            .max_by_key(|v| *v.timestamp())
-    });
-
-    let (diff_url, from_ts, to_ts, body) = diff_fields(&url, previous_doc.as_ref(), current_doc.as_ref(), data);
-
-    Ok(Response::html(format!(
-        include_str!("update.html"),
-        orig_url = &url,
-        timestamp = update.timestamp(),
-        change = update.change(),
-        diff_url = diff_url,
-        doc_from = from_ts.map_or(String::new(), |v| v.to_string()),
-        doc_to = to_ts.map_or(String::new(), |v| v.to_string()),
-        body = body,
-    ))
-    .with_etag(request, format!("{} {}", previous_doc.is_some(), current_doc.is_some())))
-}
-
-fn handle_doc_diff_page(request: &Request, from: &str, to: &str, url: &str, data: &Data) -> Result<Response, Error> {
-    let url: Url = format!("https://{}", url).parse().unwrap();
-
-    // get doc version from
-    let from = from
-        .parse::<MaybeEmpty<DateTime<FixedOffset>>>()
-        .or(Err(Error::NotFound("Doc")))?
-        .0;
-    let from_doc = from.and_then(|ts| data.get_doc_version(&url, ts).ok());
-
-    // get doc version to
-    let to = to
-        .parse::<MaybeEmpty<DateTime<FixedOffset>>>()
-        .or(Err(Error::NotFound("Doc")))?
-        .0;
-    let to_doc = to.and_then(|ts| data.get_doc_version(&url, ts).ok());
-
-    let (diff_url, from_ts, to_ts, body) = diff_fields(&url, from_doc.as_ref(), to_doc.as_ref(), data);
-
-    Ok(Response::html(format!(
-        include_str!("diff.html"),
-        orig_url = &url,
-        diff_url = diff_url,
-        doc_from = from_ts.map_or(String::new(), |v| v.to_string()),
-        doc_to = to_ts.map_or(String::new(), |v| v.to_string()),
-        body = body,
-    ))
-    .with_etag(request, format!("{} {}", from_doc.is_some(), to_doc.is_some())))
 }
 
 fn diff_fields(
@@ -196,6 +186,31 @@ impl<T: FromStr> FromStr for MaybeEmpty<T> {
         } else {
             Ok(Self(Some(s.parse()?)))
         }
+    }
+}
+
+impl<T> Deref for MaybeEmpty<T> {
+    type Target = Option<T>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Parse helper for deserialising a url where 'https://' is elided and implied
+struct HttpsStrippedUrl(Url);
+
+impl FromStr for HttpsStrippedUrl {
+    type Err = url::ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err>  {
+        Ok(HttpsStrippedUrl(url::Url::parse(&format!("https://{}", s)).unwrap().into()))
+    }
+}
+
+impl Deref for HttpsStrippedUrl {
+    type Target = Url;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

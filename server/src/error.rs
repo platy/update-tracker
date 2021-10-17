@@ -2,6 +2,7 @@ use std::io;
 
 use rouille::Response;
 
+#[derive(Debug)]
 pub enum Error {
     NotFound(&'static str),
     InternalServer,

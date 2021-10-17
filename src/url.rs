@@ -56,7 +56,7 @@ impl FromStr for Url {
     type Err = <url::Url as FromStr>::Err;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse().map(|url| Url { url })
+        s.parse().map(From::<url::Url>::from)
     }
 }
 

@@ -1,7 +1,12 @@
-use std::{borrow::Borrow, fmt, ops::Deref, str::FromStr};
+use std::{
+    borrow::Borrow,
+    fmt::{self, Write},
+    mem,
+    ops::Deref,
+    str::FromStr,
+};
 
 use chrono::{DateTime, FixedOffset};
-use form_urlencoded::Target;
 use rouille::{find_route, Request, Response};
 use update_repo::{doc::DocumentVersion, tag::Tag, update::Update, Url};
 
@@ -9,6 +14,7 @@ use update_repo::{doc::DocumentVersion, tag::Tag, update::Update, Url};
 mod web_macros;
 mod data;
 mod error;
+mod page;
 
 use data::Data;
 
@@ -123,9 +129,11 @@ fn updates_page_response<'a>(
 ) -> Response {
     let mut results = UpdateList::new(updates, request, data);
     let etag = results.etag();
+    let mut result_string = String::new(); // ugh
+    results.into_writer(&mut result_string).unwrap();
     Response::html(format!(
         include_str!("updates.html"),
-        results,
+        result_string,
         tag_options = data
             .all_tags()
             .map(|tag| format!(
@@ -191,6 +199,7 @@ impl<T: FromStr> FromStr for MaybeEmpty<T> {
 
 impl<T> Deref for MaybeEmpty<T> {
     type Target = Option<T>;
+
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -202,13 +211,16 @@ struct HttpsStrippedUrl(Url);
 impl FromStr for HttpsStrippedUrl {
     type Err = url::ParseError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err>  {
-        Ok(HttpsStrippedUrl(url::Url::parse(&format!("https://{}", s)).unwrap().into()))
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(HttpsStrippedUrl(
+            url::Url::parse(&format!("https://{}", s)).unwrap().into(),
+        ))
     }
 }
 
 impl Deref for HttpsStrippedUrl {
     type Target = Url;
+
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -217,67 +229,21 @@ impl Deref for HttpsStrippedUrl {
 /// A paginated list of updates which can be displayed as html
 struct UpdateList<'a, 'd, Us: Iterator<Item = &'a Update>> {
     data: &'d Data,
-    items: std::iter::Peekable<std::iter::Take<std::iter::Skip<Us>>>,
-    page_num: usize,
-    page_count: usize,
-    next_offset: Option<usize>,
-    prev_offset: Option<usize>,
-    href: String,
-    offset: usize,
-    filtered_count: usize,
+    page: page::Page<std::iter::Peekable<Us>>,
+    etag: String,
 }
 
 impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
     fn new(items: impl IntoIterator<IntoIter = Us>, request: &Request, data: &'d Data) -> Self {
-        let offset = request
-            .get_param("offset")
-            .and_then(|offset| offset.parse().ok())
-            .unwrap_or(0);
-        let limit = request
-            .get_param("limit")
-            .and_then(|limit| limit.parse().ok())
-            .unwrap_or(200);
-
-        let items = items.into_iter();
-        let filtered_count = items.size_hint().0; // should require `TrustedLen`
-        let items = items.skip(offset).take(limit).peekable();
-
-        let page_num = offset / limit + 1;
-        let page_count = filtered_count / limit + 1;
-
-        let existing_pairs = request.raw_query_string().to_owned();
-        let mut href = form_urlencoded::Serializer::new(request.url() + "?");
-        for (name, value) in form_urlencoded::parse(existing_pairs.as_bytes()) {
-            if name != "offset" {
-                href.append_pair(&name, &value);
-            }
-        }
-        let href = href.finish();
-
+        let mut items = items.into_iter().peekable();
         Self {
             data,
-            items,
-            page_num,
-            page_count,
-            prev_offset: (offset > 0).then(|| offset.checked_sub(limit).unwrap_or_default()),
-            next_offset: (offset + limit <= filtered_count).then(|| offset + limit),
-            href,
-            offset,
-            filtered_count,
+            etag: items.peek().map_or(String::new(), |u| format!("{}", u.timestamp())),
+            page: page::Page::new(request, items),
         }
     }
-}
 
-impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
-    fn etag(&mut self) -> String {
-        self.items
-            .peek()
-            .map_or(String::new(), |u| format!("{}", u.timestamp()))
-    }
-}
-
-impl<'a, 'd, Us: Iterator<Item = &'a Update> + Clone> fmt::Display for UpdateList<'a, 'd, Us> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn into_writer(mut self, f: &mut String) -> fmt::Result {
         let mut current_date = None;
         writeln!(
             f,
@@ -290,8 +256,7 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update> + Clone> fmt::Display for UpdateLis
         </div>"#
         )?;
 
-        let mut count_on_page = 0;
-        for update in self.items.clone() {
+        for update in &mut self.page {
             let update = update.borrow();
             let update_date = update.timestamp().date();
             if Some(update_date) != current_date {
@@ -323,7 +288,6 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update> + Clone> fmt::Display for UpdateLis
                     .collect::<String>(),
             )
             .unwrap();
-            count_on_page += 1;
         }
 
         writeln!(
@@ -331,32 +295,13 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update> + Clone> fmt::Display for UpdateLis
             "</ol>
         <div>"
         )?;
-        if let Some(prev_offset) = self.prev_offset {
-            writeln!(
-                f,
-                r#"<a href="{href}&offset={prev_offset}">prev</a>"#,
-                href = self.href,
-                prev_offset = prev_offset,
-            )?;
-        }
-        writeln!(
-            f,
-            r#" Page {page_num} of {page_count} (Updates {offset} to {last} of {total}) "#,
-            page_num = self.page_num,
-            page_count = self.page_count,
-            offset = self.offset + 1,
-            last = self.offset + count_on_page,
-            total = self.filtered_count,
-        )?;
-        if let Some(next_offset) = self.next_offset {
-            writeln!(
-                f,
-                r#"<a href="{href}&offset={next_offset}">next</a>"#,
-                href = self.href,
-                next_offset = next_offset,
-            )?;
-        }
-        writeln!(f, "</div>")?;
+        self.page.into_writer(f)?;
         Ok(())
+    }
+}
+
+impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
+    fn etag(&mut self) -> String {
+        mem::take(&mut self.etag)
     }
 }

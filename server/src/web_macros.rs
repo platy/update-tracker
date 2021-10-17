@@ -51,9 +51,9 @@ macro_rules! path {
 ///     }
 /// };
 /// ```
-/// 
+///
 /// Will make a route function called `my_route` accepting the args `request: &Request, arg: &Arg`
-/// if the route matches, the second path segment will be parsed as a `usize` and extracted to the 
+/// if the route matches, the second path segment will be parsed as a `usize` and extracted to the
 /// variable `bar` and the third and any following segments will be captured in the variable `baz`
 /// If the route doesn't match, the functions will return a 404
 macro_rules! route {

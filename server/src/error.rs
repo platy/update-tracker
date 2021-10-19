@@ -5,15 +5,16 @@ use rouille::Response;
 #[derive(Debug)]
 pub enum Error {
     NotFound(&'static str),
+    InvalidRequest,
     InternalServer,
 }
 
 impl From<Error> for Response {
     fn from(e: Error) -> Self {
-        if let Error::NotFound(name) = e {
-            Response::text(format!("{} not found", name)).with_status_code(404)
-        } else {
-            Response::text("Internal server error").with_status_code(500)
+        match e {
+            Error::NotFound(name) => Response::text(format!("{} not found", name)).with_status_code(404),
+            Error::InvalidRequest => Response::text("Invalid request").with_status_code(400),
+            Error::InternalServer => Response::text("Internal server error").with_status_code(500),
         }
     }
 }

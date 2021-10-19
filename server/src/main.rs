@@ -18,7 +18,7 @@ mod page;
 
 use data::Data;
 
-use crate::error::CouldFind;
+use crate::error::{CouldFind, Error};
 
 const LISTEN_ADDR: &str = "localhost:8080";
 
@@ -48,9 +48,10 @@ route! {
 }
 
 route! {
-    (GET /updates )
+    (GET /updates)
     handle_updates(request: &Request, data: &Data) {
-        let updates = data.list_updates().iter().copied().rev();
+        let url_prefix = request.get_param("url_prefix").as_deref().unwrap_or("www.gov.uk/").parse::<HttpsStrippedUrl>().map_err(|_| Error::InvalidRequest)?.0;
+        let updates = data.list_updates(&url_prefix);
 
         Ok(if let Some(tag) = request.get_param("tag").filter(|t| !t.is_empty()) {
             let tag = Tag::new(tag);
@@ -122,24 +123,22 @@ route! {
     }
 }
 
-fn updates_page_response<'a>(
-    updates: impl Iterator<Item = &'a Update> + Clone,
-    request: &Request,
-    data: &Data,
-) -> Response {
+fn updates_page_response<'a>(updates: impl Iterator<Item = &'a Update>, request: &Request, data: &Data) -> Response {
     let mut results = UpdateList::new(updates, request, data);
     let etag = results.etag();
     let mut result_string = String::new(); // ugh
     results.into_writer(&mut result_string).unwrap();
+    let selected_tag = request.get_param("tag");
     Response::html(format!(
         include_str!("updates.html"),
         result_string,
+        url_prefix = request.get_param("url_prefix").as_deref().unwrap_or("www.gov.uk/"),
         tag_options = data
             .all_tags()
             .map(|tag| format!(
                 r#"<option {selected}>{tag}</option>"#,
                 tag = tag,
-                selected = (request.get_param("tag").as_ref() == Some(tag))
+                selected = (selected_tag.as_ref() == Some(tag))
                     .then(|| "selected")
                     .unwrap_or_default()
             ))

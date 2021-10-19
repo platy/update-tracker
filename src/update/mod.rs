@@ -143,14 +143,18 @@ impl<L: Borrow<UpdateRef>, R: Borrow<UpdateRef>> PartialEq<UpdateRefByUrl<R>> fo
 impl<U: Borrow<UpdateRef>> Ord for UpdateRefByUrl<U> {
     fn cmp(&self, UpdateRefByUrl(other): &Self) -> std::cmp::Ordering {
         let UpdateRef { url, timestamp } = self.0.borrow();
-        url.cmp(&other.borrow().url).then_with(|| timestamp.cmp(&other.borrow().timestamp))
+        url.cmp(&other.borrow().url)
+            .then_with(|| timestamp.cmp(&other.borrow().timestamp))
     }
 }
 
 impl<L: Borrow<UpdateRef>, R: Borrow<UpdateRef>> PartialOrd<UpdateRefByUrl<R>> for UpdateRefByUrl<L> {
     fn partial_cmp(&self, UpdateRefByUrl(other): &UpdateRefByUrl<R>) -> Option<std::cmp::Ordering> {
         let UpdateRef { url, timestamp } = self.0.borrow();
-        Some(url.cmp(&other.borrow().url).then_with(|| timestamp.cmp(&other.borrow().timestamp)))
+        Some(
+            url.cmp(&other.borrow().url)
+                .then_with(|| timestamp.cmp(&other.borrow().timestamp)),
+        )
     }
 }
 

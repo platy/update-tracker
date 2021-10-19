@@ -1,5 +1,6 @@
 use core::fmt;
 use std::{
+    borrow::Borrow,
     fs,
     io,
     ops::Deref,
@@ -29,6 +30,15 @@ impl Url {
 
     pub(crate) fn push_path_segment(&mut self, segment: &str) {
         self.url.path_segments_mut().unwrap().push(segment);
+    }
+}
+
+impl Borrow<[u8]> for Url {
+    fn borrow(&self) -> &[u8] {
+        if !self.as_str().is_ascii() {
+            panic!("Url not ascii : {}", self.as_str())
+        }
+        self.as_str().as_bytes()
     }
 }
 

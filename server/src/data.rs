@@ -1,6 +1,6 @@
 use std::{
     cmp::Reverse,
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     io::{self, Read},
     ops::Deref,
 };
@@ -15,13 +15,14 @@ use update_repo::{
     Url,
 };
 
+type TimestampSubIndex = BTreeMap<DateTime<FixedOffset>, (&'static Update, HashSet<&'static Tag>)>;
+
 pub(crate) struct Data {
-    update_repo: UpdateRepo,
     doc_repo: DocRepo,
     /// All updates in ascending timestamp order
     updates: Vec<&'static Update>,
     /// all updates in url and then timestamp order with tags
-    index: Trie<Url, BTreeMap<DateTime<FixedOffset>, (&'static Update, Vec<&'static Tag>)>>,
+    index: Trie<Url, TimestampSubIndex>,
     all_tags: Vec<String>,
 }
 
@@ -37,7 +38,7 @@ impl Data {
             updates.push(r);
             tags.entry(r.url().clone())
                 .or_insert_with(Default::default)
-                .insert(*r.timestamp(), (r, Vec::with_capacity(2)));
+                .insert(*r.timestamp(), (r, HashSet::with_capacity(2)));
         }
         updates.sort_by_key(|u| u.timestamp().to_owned());
 
@@ -54,12 +55,11 @@ impl Data {
                     .expect("no tag entry for url")
                     .get_mut(&ur.timestamp)
                     .expect("no tag entry for timestamp");
-                tags.push(tag);
+                tags.insert(tag);
             }
         }
 
         Self {
-            update_repo,
             doc_repo,
             updates,
             index: tags,
@@ -83,8 +83,8 @@ impl Data {
         }
     }
 
-    pub fn get_update(&self, url: &Url, timestamp: DateTime<FixedOffset>) -> io::Result<Update> {
-        self.update_repo.get_update(url.clone(), timestamp)
+    pub fn get_updates(&self, url: &Url) -> Option<&TimestampSubIndex> {
+        self.index.get(url)
     }
 
     pub(crate) fn get_doc_version(&self, url: &Url, timestamp: DateTime<FixedOffset>) -> io::Result<DocumentVersion> {
@@ -104,14 +104,8 @@ impl Data {
         DocBody(body)
     }
 
-    pub fn get_tags(&self, ur: &UpdateRef) -> &[&Tag] {
-        self.index
-            .get(&ur.url)
-            .unwrap()
-            .get(&ur.timestamp)
-            .unwrap()
-            .1
-            .as_slice()
+    pub fn get_tags(&self, ur: &UpdateRef) -> &HashSet<&Tag> {
+        &self.index.get(&ur.url).unwrap().get(&ur.timestamp).unwrap().1
     }
 
     pub fn all_tags(&self) -> impl Iterator<Item = &String> {

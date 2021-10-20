@@ -67,7 +67,8 @@ route! {
     (GET /update/{timestamp: DateTime<FixedOffset>}/{url: HttpsStrippedUrl})
     handle_update(request: &Request, data: &Data) {
         // get update
-        let update = data.get_update(&url, timestamp).could_find("Update")?;
+        let updates = data.get_updates(&url).could_find("Update")?;
+        let update = updates.get(&timestamp).could_find("Update")?.0;
 
         // get doc version before & after update
         let current_doc = data.iter_doc_versions(&url).and_then(|iter| {
@@ -85,12 +86,15 @@ route! {
         Ok(Response::html(format!(
             include_str!("update.html"),
             orig_url = &*url,
-            timestamp = update.timestamp(),
+            timestamp = update.timestamp().naive_local(),
             change = update.change(),
             diff_url = diff_url,
             doc_from = from_ts.map_or(String::new(), |v| v.to_string()),
             doc_to = to_ts.map_or(String::new(), |v| v.to_string()),
             body = body,
+            history = updates.iter().rev().map(|(_, (update, _tags))| {
+                format!(r#"<a href="/update/{}/{}{}"><p>{}<br />{}</p></a>"#, update.timestamp().to_rfc3339(), update.url().host_str().unwrap(), update.url().path(), update.timestamp().naive_local(), update.change())
+            }).collect::<String>()
         ))
         .with_etag(
             request,

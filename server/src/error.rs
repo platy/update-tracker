@@ -38,3 +38,11 @@ impl<T> CouldFind for Result<T, io::Error> {
         })
     }
 }
+
+impl<T> CouldFind for Option<T> {
+    type Success = T;
+
+    fn could_find(self, name: &'static str) -> Result<Self::Success, Error> {
+        self.ok_or(Error::NotFound(name))
+    }
+}

@@ -321,7 +321,7 @@ section {
     background-color: #ffffe0
 }
 
-.commit-log {
+.updates .commit-log {
     display: -webkit-box;
     display: -ms-flexbox;
     display: flex;
@@ -380,12 +380,9 @@ section {
     .commit-log .table-header * {
         display: table-cell
     }
-    .commit-log {
+    .updates .commit-log {
         display: table;
         table-layout: fixed
-    }
-    .commit-log>:before {
-        display: table-cell
     }
     .commit-log>* {
         display: table-row

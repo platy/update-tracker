@@ -3,6 +3,7 @@ use std::{
     collections::{BTreeMap, HashSet},
     io::{self, Read},
     ops::Deref,
+    sync::Arc,
 };
 
 use chrono::{DateTime, FixedOffset};
@@ -15,12 +16,12 @@ use update_repo::{
     Url,
 };
 
-type TimestampSubIndex = BTreeMap<DateTime<FixedOffset>, (&'static Update, HashSet<&'static Tag>)>;
+type TimestampSubIndex = BTreeMap<DateTime<FixedOffset>, (Arc<Update>, HashSet<Arc<Tag>>)>;
 
 pub(crate) struct Data {
     doc_repo: DocRepo,
     /// All updates in ascending timestamp order
-    updates: Vec<&'static Update>,
+    updates: Vec<Arc<Update>>,
     /// all updates in url and then timestamp order with tags
     index: Trie<Url, TimestampSubIndex>,
     all_tags: Vec<String>,
@@ -32,11 +33,12 @@ impl Data {
         let doc_repo = DocRepo::new("../repo/url").unwrap();
 
         let mut updates: Vec<_> = vec![];
-        let mut tags: Trie<_, BTreeMap<_, _>> = Trie::new();
+        let mut index: Trie<_, BTreeMap<_, _>> = Trie::new();
         for update in update_repo.list_all(&"https://www.gov.uk/".parse().unwrap()).unwrap() {
-            let r = &*Box::leak(Box::new(update.unwrap()));
-            updates.push(r);
-            tags.entry(r.url().clone())
+            let r = Arc::new(update.unwrap());
+            updates.push(r.clone());
+            index
+                .entry(r.url().clone())
                 .or_insert_with(Default::default)
                 .insert(*r.timestamp(), (r, HashSet::with_capacity(2)));
         }
@@ -47,39 +49,38 @@ impl Data {
         for tag in tag_repo.list_tags().unwrap() {
             println!("Tag {}", tag.name());
             all_tags.push(tag.name().to_owned());
-            let tag = &*Box::leak(Box::new(tag));
-            for ur in tag_repo.list_updates_in_tag(tag).unwrap() {
+            let tag = Arc::new(tag);
+            for ur in tag_repo.list_updates_in_tag(&tag).unwrap() {
                 let ur = ur.unwrap();
-                let (_update, tags) = tags
+                let (_update, tags) = index
                     .get_mut(&ur.url)
                     .expect("no tag entry for url")
                     .get_mut(&ur.timestamp)
                     .expect("no tag entry for timestamp");
-                tags.insert(tag);
+                tags.insert(tag.clone());
             }
         }
 
         Self {
             doc_repo,
             updates,
-            index: tags,
+            index,
             all_tags,
         }
     }
 
-    pub fn list_updates(&self, base: &Url) -> Box<dyn Iterator<Item = &'static Update> + '_> {
+    pub fn list_updates(&self, base: &Url) -> Box<dyn Iterator<Item = &Update> + '_> {
         if base.as_str() == "https://www.gov.uk" {
-            let iter = self.updates.iter().copied().rev();
+            let iter = self.updates.iter().rev().map(Deref::deref);
             Box::new(iter)
         } else {
             let mut filtered: Vec<_> = self
                 .index
                 .iter_prefix(base)
                 .flat_map(|(_, map)| map.iter().map(|(_, (update, _))| update))
-                .copied()
                 .collect();
             filtered.sort_by_key(|update| Reverse(update.timestamp()));
-            Box::new(filtered.into_iter())
+            Box::new(filtered.into_iter().map(Deref::deref))
         }
     }
 
@@ -104,7 +105,7 @@ impl Data {
         DocBody(body)
     }
 
-    pub fn get_tags(&self, ur: &UpdateRef) -> &HashSet<&Tag> {
+    pub fn get_tags(&self, ur: &UpdateRef) -> &HashSet<Arc<Tag>> {
         &self.index.get(&ur.url).unwrap().get(&ur.timestamp).unwrap().1
     }
 

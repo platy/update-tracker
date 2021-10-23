@@ -9,7 +9,7 @@ use std::{
     vec,
 };
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 pub struct Url {
     url: url::Url,
 }

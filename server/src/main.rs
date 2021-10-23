@@ -8,7 +8,7 @@ use std::{
 
 use chrono::{DateTime, FixedOffset};
 use rouille::{find_route, Request, Response};
-use update_repo::{doc::DocumentVersion, tag::Tag, update::Update, Url};
+use update_repo::{doc::DocumentVersion, Url};
 
 #[macro_use]
 mod web_macros;
@@ -16,9 +16,7 @@ mod data;
 mod error;
 mod page;
 
-use data::Data;
-
-use crate::error::{CouldFind, Error};
+use data::{Data, Update};
 
 const LISTEN_ADDR: &str = "localhost:8080";
 
@@ -34,7 +32,7 @@ fn main() {
             rouille::match_assets(request, "./static"),
             handle_root(request),
             handle_updates(request, &data),
-            handle_update(request, &data),
+            // handle_update(request, &data),
             handle_doc_diff_page(request, &data)
         )
     });
@@ -50,58 +48,55 @@ route! {
 route! {
     (GET /updates)
     handle_updates(request: &Request, data: &Data) {
-        let url_prefix = request.get_param("url_prefix").as_deref().unwrap_or("www.gov.uk/").parse::<HttpsStrippedUrl>().map_err(|_| Error::InvalidRequest)?.0;
-        let updates = data.list_updates(&url_prefix);
+        // let url_prefix = request.get_param("url_prefix").as_deref().unwrap_or("www.gov.uk/").parse::<HttpsStrippedUrl>().map_err(|_| Error::InvalidRequest)?.0;
+        // let updates = data.list_updates(&url_prefix);
 
-        Ok(if let Some(tag) = request.get_param("tag").filter(|t| !t.is_empty()) {
-            let tag = Tag::new(tag);
-            let updates = updates.filter(|u| data.get_tags(u.update_ref()).contains(&tag));
-            updates_page_response(updates,request,data)
-        } else {
-            updates_page_response(updates,request,data)
-        })
+        let q = request.get_param("q");
+
+        let updates = data.search(q.as_deref().filter(|q| !q.is_empty()));
+        Ok(updates_page_response(updates,request,data))
     }
 }
 
-route! {
-    (GET /update/{timestamp: DateTime<FixedOffset>}/{url: HttpsStrippedUrl})
-    handle_update(request: &Request, data: &Data) {
-        // get update
-        let updates = data.get_updates(&url).could_find("Update")?;
-        let update = &updates.get(&timestamp).could_find("Update")?.0;
+// route! {
+//     (GET /update/{timestamp: DateTime<FixedOffset>}/{url: HttpsStrippedUrl})
+//     handle_update(request: &Request, data: &Data) {
+//         // get update
+//         let updates = data.get_updates(&url).could_find("Update")?;
+//         let update = &updates.get(&timestamp).could_find("Update")?.0;
 
-        // get doc version before & after update
-        let current_doc = data.iter_doc_versions(&url).and_then(|iter| {
-            iter.filter(|v| v.timestamp() > &timestamp)
-                .min_by_key(|v| *v.timestamp())
-        });
-        let previous_doc = data.iter_doc_versions(&url).and_then(|iter| {
-            iter.filter(|v| v.timestamp() < current_doc.as_ref().map_or(&timestamp, DocumentVersion::timestamp))
-                .max_by_key(|v| *v.timestamp())
-        });
+//         // get doc version before & after update
+//         let current_doc = data.iter_doc_versions(&url).and_then(|iter| {
+//             iter.filter(|v| v.timestamp() > &timestamp)
+//                 .min_by_key(|v| *v.timestamp())
+//         });
+//         let previous_doc = data.iter_doc_versions(&url).and_then(|iter| {
+//             iter.filter(|v| v.timestamp() < current_doc.as_ref().map_or(&timestamp, DocumentVersion::timestamp))
+//                 .max_by_key(|v| *v.timestamp())
+//         });
 
-        // do the diff
-        let (diff_url, from_ts, to_ts, body) = diff_fields(&url, previous_doc.as_ref(), current_doc.as_ref(), data);
+//         // do the diff
+//         let (diff_url, from_ts, to_ts, body) = diff_fields(&url, previous_doc.as_ref(), current_doc.as_ref(), data);
 
-        Ok(Response::html(format!(
-            include_str!("update.html"),
-            orig_url = &*url,
-            timestamp = update.timestamp().naive_local(),
-            change = update.change(),
-            diff_url = diff_url,
-            doc_from = from_ts.map_or(String::new(), |v| v.to_string()),
-            doc_to = to_ts.map_or(String::new(), |v| v.to_string()),
-            body = body,
-            history = updates.iter().rev().map(|(_, (update, _tags))| {
-                format!(r#"<a href="/update/{}/{}{}"><p>{}<br />{}</p></a>"#, update.timestamp().to_rfc3339(), update.url().host_str().unwrap(), update.url().path(), update.timestamp().naive_local(), update.change())
-            }).collect::<String>()
-        ))
-        .with_etag(
-            request,
-            format!("{} {}", previous_doc.is_some(), current_doc.is_some()),
-        ))
-    }
-}
+//         Ok(Response::html(format!(
+//             include_str!("update.html"),
+//             orig_url = &*url,
+//             timestamp = update.timestamp().naive_local(),
+//             change = update.change(),
+//             diff_url = diff_url,
+//             doc_from = from_ts.map_or(String::new(), |v| v.to_string()),
+//             doc_to = to_ts.map_or(String::new(), |v| v.to_string()),
+//             body = body,
+//             history = updates.iter().rev().map(|(_, (update, _tags))| {
+//                 format!(r#"<a href="/update/{}/{}{}"><p>{}<br />{}</p></a>"#, update.timestamp().to_rfc3339(), update.url().host_str().unwrap(), update.url().path(), update.timestamp().naive_local(), update.change())
+//             }).collect::<String>()
+//         ))
+//         .with_etag(
+//             request,
+//             format!("{} {}", previous_doc.is_some(), current_doc.is_some()),
+//         ))
+//     }
+// }
 
 route! {
     (GET /diff/{from: MaybeEmpty<DateTime<FixedOffset>>}/{to: MaybeEmpty<DateTime<FixedOffset>>}/{url: HttpsStrippedUrl})
@@ -127,8 +122,8 @@ route! {
     }
 }
 
-fn updates_page_response<'a>(updates: impl Iterator<Item = &'a Update>, request: &Request, data: &Data) -> Response {
-    let mut results = UpdateList::new(updates, request, data);
+fn updates_page_response<'a>(updates: impl Iterator<Item = Update<'a>>, request: &Request, data: &Data) -> Response {
+    let mut results = UpdateList::new(updates, request);
     let etag = results.etag();
     let mut result_string = String::new(); // ugh
     results.into_writer(&mut result_string).unwrap();
@@ -230,18 +225,21 @@ impl Deref for HttpsStrippedUrl {
 }
 
 /// A paginated list of updates which can be displayed as html
-struct UpdateList<'a, 'd, Us: Iterator<Item = &'a Update>> {
-    data: &'d Data,
+struct UpdateList<'a, Us: Iterator<Item = Update<'a>>> {
     page: page::Page<std::iter::Peekable<Us>>,
     etag: String,
 }
 
-impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
-    fn new(items: impl IntoIterator<IntoIter = Us>, request: &Request, data: &'d Data) -> Self {
+impl<'a, 'd, Us> UpdateList<'a, Us>
+where
+    Us: Iterator<Item = Update<'a>>,
+{
+    fn new(items: impl IntoIterator<IntoIter = Us>, request: &Request) -> Self {
         let mut items = items.into_iter().peekable();
         Self {
-            data,
-            etag: items.peek().map_or(String::new(), |u| format!("{}", u.timestamp())),
+            etag: items
+                .peek()
+                .map_or(String::new(), |u| format!("{}", u.borrow().timestamp())),
             page: page::Page::new(request, items),
         }
     }
@@ -283,12 +281,7 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
                 update.url().path(),
                 update.timestamp().time().to_string(),
                 update.change(),
-                tags = self
-                    .data
-                    .get_tags(update.update_ref())
-                    .iter()
-                    .map(|t| format!("<li>{}</li>", t.name()))
-                    .collect::<String>(),
+                tags = update.tags().map(|t| format!("<li>{}</li>", t)).collect::<String>(),
             )
             .unwrap();
         }
@@ -303,7 +296,7 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
     }
 }
 
-impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
+impl<'a, Us: Iterator<Item = Update<'a>>> UpdateList<'a, Us> {
     fn etag(&mut self) -> String {
         mem::take(&mut self.etag)
     }

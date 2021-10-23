@@ -13,7 +13,7 @@ pub struct Update {
 }
 
 impl Update {
-    pub(crate) fn new(url: Url, timestamp: DateTime<FixedOffset>, change: String) -> Self {
+    pub fn new(url: Url, timestamp: DateTime<FixedOffset>, change: String) -> Self {
         Self {
             update_ref: UpdateRef { url, timestamp },
             change,
@@ -56,7 +56,7 @@ impl fmt::Display for Update {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct UpdateRef {
     pub url: Url,
     pub timestamp: DateTime<FixedOffset>,

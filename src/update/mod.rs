@@ -56,7 +56,7 @@ impl fmt::Display for Update {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct UpdateRef {
     pub url: Url,
     pub timestamp: DateTime<FixedOffset>,

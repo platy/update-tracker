@@ -9,6 +9,7 @@ use std::{
 use chrono::{DateTime, FixedOffset};
 use htmldiff::htmldiff;
 use qp_trie::Trie;
+use simsearch::SimSearch;
 use update_repo::{
     doc::{DocRepo, DocumentVersion},
     tag::{Tag, TagRepo},
@@ -25,6 +26,8 @@ pub(crate) struct Data {
     /// all updates in url and then timestamp order with tags
     index: Trie<Url, TimestampSubIndex>,
     all_tags: Vec<String>,
+    /// full text index of the updat change field, it's keyed on the index on `self.index`
+    change_index: SimSearch<UpdateRef>,
 }
 
 impl Data {
@@ -32,15 +35,18 @@ impl Data {
         let update_repo = UpdateRepo::new("../repo/url").unwrap();
         let doc_repo = DocRepo::new("../repo/url").unwrap();
 
+        let mut change_index = SimSearch::new();
         let mut updates: Vec<_> = vec![];
         let mut index: Trie<_, BTreeMap<_, _>> = Trie::new();
         for update in update_repo.list_all(&"https://www.gov.uk/".parse().unwrap()).unwrap() {
-            let r = Arc::new(update.unwrap());
-            updates.push(r.clone());
+            let update = update.unwrap();
+            change_index.insert(update.update_ref().clone(), update.change());
+            let update = Arc::new(update);
+            updates.push(update.clone());
             index
-                .entry(r.url().clone())
+                .entry(update.url().clone())
                 .or_insert_with(Default::default)
-                .insert(*r.timestamp(), (r, HashSet::with_capacity(2)));
+                .insert(*update.timestamp(), (update, HashSet::with_capacity(2)));
         }
         updates.sort_by_key(|u| u.timestamp().to_owned());
 
@@ -66,13 +72,41 @@ impl Data {
             updates,
             index,
             all_tags,
+            change_index,
         }
     }
 
-    pub fn list_updates(&self, base: &Url) -> Box<dyn Iterator<Item = &Update> + '_> {
+    pub fn list_updates(
+        &self,
+        base: &Url,
+        change_terms: Option<String>,
+        tag: Option<Tag>,
+    ) -> Box<dyn Iterator<Item = &Update> + '_> {
+        let change_matches =
+            change_terms.map(|change_terms| {
+                self.change_index
+                    .search(&change_terms)
+                    .into_iter()
+                    .collect::<std::collections::HashSet<_>>()
+            });
+
+        let match_tag_and_change = move |u: &&Update| {
+            if let Some(tag) = &tag {
+                if !self.get_tags(u.update_ref()).contains(tag) {
+                    return false;
+                }
+            }
+            if let Some(change_matches) = &change_matches {
+                if !change_matches.contains(u.update_ref()) {
+                    return false;
+                }
+            }
+            true
+        };
+
         if base.as_str() == "https://www.gov.uk" {
             let iter = self.updates.iter().rev().map(Deref::deref);
-            Box::new(iter)
+            Box::new(iter.filter(match_tag_and_change))
         } else {
             let mut filtered: Vec<_> = self
                 .index
@@ -80,7 +114,7 @@ impl Data {
                 .flat_map(|(_, map)| map.iter().map(|(_, (update, _))| update))
                 .collect();
             filtered.sort_by_key(|update| Reverse(update.timestamp()));
-            Box::new(filtered.into_iter().map(Deref::deref))
+            Box::new(filtered.into_iter().map(Deref::deref).filter(match_tag_and_change))
         }
     }
 

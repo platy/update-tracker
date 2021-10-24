@@ -30,7 +30,8 @@
         </header>
         <form action="" method="get">
             <select name=tag><option value="">All</option>{tag_options}</select>
-            <input name="url_prefix" value="{url_prefix}" />
+            <input name="url_prefix" placeholder="URL prefix" value="{url_prefix_filter}" />
+            <input name="change" placeholder="Change description" value="{change_filter}" />
             <input type="submit" value="Filter" />
         </form>
         {}

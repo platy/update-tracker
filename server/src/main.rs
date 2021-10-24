@@ -51,15 +51,12 @@ route! {
     (GET /updates)
     handle_updates(request: &Request, data: &Data) {
         let url_prefix = request.get_param("url_prefix").as_deref().unwrap_or("www.gov.uk/").parse::<HttpsStrippedUrl>().map_err(|_| Error::InvalidRequest)?.0;
-        let updates = data.list_updates(&url_prefix);
+        let change_terms = request.get_param("change").filter(|t| !t.is_empty());
+        let tag = request.get_param("tag").filter(|t| !t.is_empty()).map(Tag::new);
 
-        Ok(if let Some(tag) = request.get_param("tag").filter(|t| !t.is_empty()) {
-            let tag = Tag::new(tag);
-            let updates = updates.filter(|u| data.get_tags(u.update_ref()).contains(&tag));
-            updates_page_response(updates,request,data)
-        } else {
-            updates_page_response(updates,request,data)
-        })
+        let updates = data.list_updates(&url_prefix, change_terms, tag);
+
+        Ok(updates_page_response(updates,request,data))
     }
 }
 
@@ -136,7 +133,8 @@ fn updates_page_response<'a>(updates: impl Iterator<Item = &'a Update>, request:
     Response::html(format!(
         include_str!("updates.html"),
         result_string,
-        url_prefix = request.get_param("url_prefix").as_deref().unwrap_or("www.gov.uk/"),
+        url_prefix_filter = request.get_param("url_prefix").as_deref().unwrap_or("www.gov.uk/"),
+        change_filter = request.get_param("change").as_deref().unwrap_or(""),
         tag_options = data
             .all_tags()
             .map(|tag| format!(

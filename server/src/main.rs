@@ -55,7 +55,7 @@ route! {
 
         Ok(if let Some(tag) = request.get_param("tag").filter(|t| !t.is_empty()) {
             let tag = Tag::new(tag);
-            let updates = updates.filter(|u| data.get_tags(u.update_ref()).contains(&&tag));
+            let updates = updates.filter(|u| data.get_tags(u.update_ref()).contains(&tag));
             updates_page_response(updates,request,data)
         } else {
             updates_page_response(updates,request,data)
@@ -68,7 +68,7 @@ route! {
     handle_update(request: &Request, data: &Data) {
         // get update
         let updates = data.get_updates(&url).could_find("Update")?;
-        let update = updates.get(&timestamp).could_find("Update")?.0;
+        let update = &updates.get(&timestamp).could_find("Update")?.0;
 
         // get doc version before & after update
         let current_doc = data.iter_doc_versions(&url).and_then(|iter| {

@@ -82,13 +82,12 @@ impl Data {
         change_terms: Option<String>,
         tag: Option<Tag>,
     ) -> Box<dyn Iterator<Item = &Update> + '_> {
-        let change_matches =
-            change_terms.map(|change_terms| {
-                self.change_index
-                    .search(&change_terms)
-                    .into_iter()
-                    .collect::<std::collections::HashSet<_>>()
-            });
+        let change_matches = change_terms.map(|change_terms| {
+            self.change_index
+                .search(&change_terms)
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>()
+        });
 
         let match_tag_and_change = move |u: &&Update| {
             if let Some(tag) = &tag {

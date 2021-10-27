@@ -1,44 +1,44 @@
 macro_rules! path {
   (let /{$seg:pat} $(/$tail:tt)+ = $url:expr) => {
       let url = $url;
-      let url = url.strip_prefix("/").ok_or($crate::error::Error::NotFound("Route"))?;
-      let split_index = url.find('/').ok_or($crate::error::Error::NotFound("Route"))?;
+      let url = url.strip_prefix("/").ok_or($crate::web::error::Error::NotFound("Route"))?;
+      let split_index = url.find('/').ok_or($crate::web::error::Error::NotFound("Route"))?;
       let $seg = &url[..split_index];
       let url = &url[split_index..];
       path!(let $(/$tail)+ = url);
   };
   (let /{$seg:ident: $sty:ty} $(/$tail:tt)+ = $url:expr) => {
       let url = $url;
-      let url = url.strip_prefix("/").ok_or($crate::error::Error::NotFound("Route"))?;
-      let split_index = url.find('/').ok_or($crate::error::Error::NotFound("Route"))?;
-      let $seg = url[..split_index].parse::<$sty>().map_err(|_| $crate::error::Error::NotFound("Route"))?;
+      let url = url.strip_prefix("/").ok_or($crate::web::error::Error::NotFound("Route"))?;
+      let split_index = url.find('/').ok_or($crate::web::error::Error::NotFound("Route"))?;
+      let $seg = url[..split_index].parse::<$sty>().map_err(|_| $crate::web::error::Error::NotFound("Route"))?;
       let url = &url[split_index..];
       path!(let $(/$tail)+ = url);
   };
   (let /$seg:ident $(/$tail:tt)+ = $url:expr) => {
       let url = $url;
-      let url = url.strip_prefix(concat!("/", stringify!($seg))).ok_or($crate::error::Error::NotFound("Route"))?;
+      let url = url.strip_prefix(concat!("/", stringify!($seg))).ok_or($crate::web::error::Error::NotFound("Route"))?;
       path!(let $(/$tail)+ = url);
   };
   (let / = $url:expr) => {
       let url = $url;
       if url != "/" {
-          return Err($crate::error::Error::NotFound("Route"))
+          return Err($crate::web::error::Error::NotFound("Route"))
       }
   };
   (let /$seg:ident = $url:expr) => {
       let url = $url;
       if url != concat!("/", stringify!($seg)) {
-          return Err($crate::error::Error::NotFound("Route"))
+          return Err($crate::web::error::Error::NotFound("Route"))
       }
   };
   (let /{$seg:ident} = $url:expr) => {
-      let url = $url.strip_prefix("/").ok_or($crate::error::Error::NotFound("Route"))?;
+      let url = $url.strip_prefix("/").ok_or($crate::web::error::Error::NotFound("Route"))?;
       let $seg = url;
   };
   (let /{$seg:ident: $sty:ty} = $url:expr) => {
-      let url = $url.strip_prefix("/").ok_or($crate::error::Error::NotFound("Route"))?;
-      let $seg = url.parse::<$sty>().map_err(|_| $crate::error::Error::NotFound("Route"))?;
+      let url = $url.strip_prefix("/").ok_or($crate::web::error::Error::NotFound("Route"))?;
+      let $seg = url.parse::<$sty>().map_err(|_| $crate::web::error::Error::NotFound("Route"))?;
   };
 }
 
@@ -59,9 +59,9 @@ macro_rules! path {
 macro_rules! route {
   {( $method:ident $($path:tt)*) $id:ident($request:ident: &Request $(, $arg:ident: $arg_ty:ty)*) $b:block} => {
       fn $id ($request: &Request $(, $arg: $arg_ty)*) -> Response {
-          let f = move || -> Result<Response, $crate::error::Error> {
+          let f = move || -> Result<Response, $crate::web::error::Error> {
               if $request.method() != stringify!($method) {
-                  return Err($crate::error::Error::NotFound("Method"))
+                  return Err($crate::web::error::Error::NotFound("Method"))
               }
               path!(let $($path)* = $request.url());
               $b
@@ -75,7 +75,7 @@ macro_rules! route {
 macro_rules! assert_extract {
     (path($($args:tt)*); $($is:ident == $should:literal);*) => {
         {
-            let f = || -> Result<rouille::Response, $crate::error::Error>  {
+            let f = || -> Result<rouille::Response, $crate::web::error::Error>  {
                 path!($($args)*);
                 $(
                     assert_eq!($is, $should);
@@ -91,7 +91,7 @@ macro_rules! assert_extract {
 macro_rules! assert_bail {
     (path($($args:tt)*)) => {
         {
-            let f = || -> Result<rouille::Response, $crate::error::Error>  {
+            let f = || -> Result<rouille::Response, $crate::web::error::Error>  {
                 path!($($args)*);
                 Ok(rouille::Response::empty_204())
             };

@@ -89,6 +89,12 @@ impl DocContent {
     }
 }
 
+impl AsRef<[u8]> for DocContent {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
 impl DocUpdate {
     pub fn new(date: DateTime<Utc>, summary: impl Into<String>) -> Self {
         Self(date, summary.into())

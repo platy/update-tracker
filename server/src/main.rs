@@ -3,8 +3,8 @@ use std::thread;
 use crate::data::Data;
 
 mod data;
+mod ingress;
 mod web;
-mod gitgov;
 
 const LISTEN_ADDR: &str = "localhost:8080";
 
@@ -13,7 +13,7 @@ fn main() {
 
     let data = Data::new();
 
-    thread::spawn(gitgov::run);
+    thread::spawn(ingress::run);
 
     web::listen(LISTEN_ADDR, data);
 }

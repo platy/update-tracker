@@ -296,6 +296,7 @@ impl<'a> NewRepoWriter<'a> {
             .create(url.into(), ts)
             .and_then(|mut doc| doc.write_all(content.as_bytes()).and_then(|_| doc.done()))
             .map(|doc| {
+                println!("Wrote doc to doc repo");
                 for e in doc.into_events() {
                     self.handle_doc_event(e);
                 }

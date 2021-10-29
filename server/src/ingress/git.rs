@@ -1,6 +1,6 @@
 //! Helpers for git
 
-use std::path::Path;
+use std::{cell::RefCell, path::Path};
 
 use anyhow::{format_err, Context, Result};
 use git2::{Commit, Oid, Repository, Signature, Tree, TreeBuilder};
@@ -43,22 +43,21 @@ impl<'a> GitRepoWriter<'a> {
         let parent = self.git_repo.find_reference(self.git_reference)?.peel_to_commit()?;
         Ok(GitRepoTransaction {
             writer: self,
-            parent: Some(parent),
+            parent: RefCell::new(Some(parent)),
         })
     }
 }
 
 pub struct GitRepoTransaction<'a, 'b> {
     writer: &'b GitRepoWriter<'a>,
-    parent: Option<Commit<'b>>,
+    parent: RefCell<Option<Commit<'b>>>,
 }
 impl<'a, 'b> GitRepoTransaction<'a, 'b> {
     pub(crate) fn commit(self, log_message: &'b str) -> Result<(), git2::Error> {
-        if let Some(parent) = self.parent {
-            self.writer
-                .git_repo
-                .reference(self.writer.git_reference, parent.id(), true, log_message)?;
-        }
+        let parent = self.parent.borrow().as_ref().unwrap().id();
+        self.writer
+            .git_repo
+            .reference(self.writer.git_reference, parent, true, log_message)?;
         Ok(())
     }
 
@@ -73,7 +72,7 @@ impl<'a, 'b> GitRepoTransaction<'a, 'b> {
 
 pub struct GitRepoChangeBuilder<'a, 'b, 'c> {
     transaction: &'c GitRepoTransaction<'a, 'b>,
-    commit_builder: CommitBuilder<'c>,
+    commit_builder: CommitBuilder<'b>,
 }
 
 impl<'a, 'b, 'c> GitRepoChangeBuilder<'a, 'b, 'c> {
@@ -93,7 +92,8 @@ impl<'a, 'b, 'c> GitRepoChangeBuilder<'a, 'b, 'c> {
         );
         let govuk_sig = Signature::now("Gov.uk", "info@gov.uk")?;
         let gitgov_sig = Signature::now("Gitgov", "gitgov@njk.onl")?;
-        self.commit_builder.commit(&govuk_sig, &gitgov_sig, &message)?;
+        let commit = self.commit_builder.commit(&govuk_sig, &gitgov_sig, &message)?;
+        self.transaction.parent.replace(Some(commit));
         Ok(())
     }
 }

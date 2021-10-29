@@ -24,6 +24,10 @@ impl<T: Entity, const N: usize> WithEvents<T, N> {
     pub fn into_events(self) -> Events<T::WriteEvent, N> {
         self.events
     }
+
+    pub fn into_inner(self) -> T {
+        self.entity
+    }
 }
 
 impl<T: Entity, const N: usize> Deref for WithEvents<T, N> {

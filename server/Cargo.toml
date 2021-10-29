@@ -22,3 +22,8 @@ git2 = { version = "0.13.12", default-features = false, features = ["ssh"] }
 anyhow = "1.0.33"
 dotenv = "0.15.0"
 file-lock = "1.1.20"
+chrono-tz = "0.6.0"
+
+[dev-dependencies]
+html-diff = "0.0.6"
+pretty_assertions = "1.0.0"

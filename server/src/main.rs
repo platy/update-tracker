@@ -1,19 +1,19 @@
-use std::thread;
+use std::{
+    sync::{Arc, RwLock},
+    thread,
+};
 
-use crate::data::Data;
+use update_tracker::{data::Data, ingress, web};
 
-mod data;
-mod ingress;
-mod web;
-
-const LISTEN_ADDR: &str = "localhost:8080";
+const LISTEN_ADDR: &str = "0.0.0.0:80";
 
 fn main() {
     println!("Loading data");
 
-    let data = Data::new();
+    let data = Arc::new(RwLock::new(Data::load()));
+    let data2 = data.clone();
 
-    thread::spawn(ingress::run);
+    thread::spawn(|| ingress::run(data2));
 
     web::listen(LISTEN_ADDR, data);
 }

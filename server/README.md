@@ -20,5 +20,5 @@ killall gitgov
 
 restart:
 ```sh
-cargo build; killall gitgov; date >> logs; bash -c 'setsid cargo run </dev/null &>>logs & jobs -p %1'
+cargo build; killall update-tracker; date >> logs; bash -c 'setsid cargo run </dev/null &>>logs & jobs -p %1'
 ```

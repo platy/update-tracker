@@ -1,7 +1,102 @@
 //! Helpers for git
 
+use std::path::Path;
+
 use anyhow::{format_err, Context, Result};
 use git2::{Commit, Oid, Repository, Signature, Tree, TreeBuilder};
+
+pub fn push(repo_base: impl AsRef<Path>) -> Result<()> {
+    println!("Pushing to github");
+    let mut remote_callbacks = git2::RemoteCallbacks::new();
+    remote_callbacks.credentials(|_url, username_from_url, _allowed_types| {
+        git2::Cred::ssh_key(
+            username_from_url.unwrap(),
+            None,
+            std::path::Path::new(&format!("{}/.ssh/id_rsa", std::env::var("HOME").unwrap())),
+            None,
+        )
+    });
+    let repo = Repository::open(repo_base).context("Opening repo")?;
+    let mut remote = repo.find_remote("origin")?;
+    remote.push(
+        &["refs/heads/main"],
+        Some(git2::PushOptions::new().remote_callbacks(remote_callbacks)),
+    )?;
+    Ok(())
+}
+
+pub struct GitRepoWriter<'a> {
+    git_repo: Repository,
+    git_reference: &'a str,
+}
+
+impl<'a> GitRepoWriter<'a> {
+    pub fn new(git_repo: &'a Path, git_reference: &'a str) -> Result<Self> {
+        let git_repo = Repository::open(git_repo).context("Opening repo")?;
+        Ok(Self {
+            git_repo,
+            git_reference,
+        })
+    }
+
+    pub fn start_transaction(&self) -> Result<GitRepoTransaction<'a, '_>> {
+        let parent = self.git_repo.find_reference(self.git_reference)?.peel_to_commit()?;
+        Ok(GitRepoTransaction {
+            writer: self,
+            parent: Some(parent),
+        })
+    }
+}
+
+pub struct GitRepoTransaction<'a, 'b> {
+    writer: &'b GitRepoWriter<'a>,
+    parent: Option<Commit<'b>>,
+}
+impl<'a, 'b> GitRepoTransaction<'a, 'b> {
+    pub(crate) fn commit(self, log_message: &'b str) -> Result<(), git2::Error> {
+        if let Some(parent) = self.parent {
+            self.writer
+                .git_repo
+                .reference(self.writer.git_reference, parent.id(), true, log_message)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn start_change(&mut self) -> Result<GitRepoChangeBuilder<'a, 'b, '_>, git2::Error> {
+        let parent = self.parent.take();
+        Ok(GitRepoChangeBuilder {
+            transaction: self,
+            commit_builder: CommitBuilder::new(&self.writer.git_repo, parent)?,
+        })
+    }
+}
+
+pub struct GitRepoChangeBuilder<'a, 'b, 'c> {
+    transaction: &'c GitRepoTransaction<'a, 'b>,
+    commit_builder: CommitBuilder<'c>,
+}
+
+impl<'a, 'b, 'c> GitRepoChangeBuilder<'a, 'b, 'c> {
+    pub(crate) fn add_doc(&mut self, path: &Path, content: impl AsRef<[u8]>) -> Result<()> {
+        // write the blob
+        let oid = self.transaction.writer.git_repo.blob(content.as_ref())?;
+        self.commit_builder.add_to_tree(path.to_str().unwrap(), oid, 0o100644)?;
+        Ok(())
+    }
+
+    pub(crate) fn commit_update(self, updated_at: &str, change: &str, category: Option<&str>) -> Result<()> {
+        let message = format!(
+            "{}: {}{}",
+            updated_at,
+            change,
+            category.map(|c| format!(" [{}]", c)).unwrap_or_default()
+        );
+        let govuk_sig = Signature::now("Gov.uk", "info@gov.uk")?;
+        let gitgov_sig = Signature::now("Gitgov", "gitgov@njk.onl")?;
+        self.commit_builder.commit(&govuk_sig, &gitgov_sig, &message)?;
+        Ok(())
+    }
+}
 
 pub struct CommitBuilder<'repo> {
     repo: &'repo Repository,

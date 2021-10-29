@@ -1,10 +1,10 @@
-use gitgov_rs::{
+use pretty_assertions::assert_eq;
+use update_tracker::ingress::{
     doc::{remove_ids, DocUpdate},
     retrieve_doc,
     Doc,
     DocContent,
 };
-use pretty_assertions::assert_eq;
 
 macro_rules! assert_doc {
     ($doc:expr, $url:expr, $body:expr) => {

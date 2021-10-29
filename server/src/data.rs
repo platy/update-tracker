@@ -19,7 +19,7 @@ use update_repo::{
 
 type TimestampSubIndex = BTreeMap<DateTime<FixedOffset>, (Arc<Update>, HashSet<Arc<Tag>>)>;
 
-pub(crate) struct Data {
+pub struct Data {
     doc_repo: DocRepo,
     /// All updates in ascending timestamp order
     updates: Vec<Arc<Update>>,
@@ -31,49 +31,62 @@ pub(crate) struct Data {
 }
 
 impl Data {
-    pub fn new() -> Self {
+    pub fn load() -> Self {
         let update_repo = UpdateRepo::new("../repo/url").unwrap();
         let doc_repo = DocRepo::new("../repo/url").unwrap();
 
-        let mut change_index = SimSearch::new();
-        let mut updates: Vec<_> = vec![];
-        let mut index: Trie<_, BTreeMap<_, _>> = Trie::new();
-        for update in update_repo.list_all(&"https://www.gov.uk/".parse().unwrap()).unwrap() {
-            let update = update.unwrap();
-            change_index.insert(update.update_ref().clone(), update.change());
-            let update = Arc::new(update);
-            updates.push(update.clone());
-            index
-                .entry(update.url().clone())
-                .or_insert_with(Default::default)
-                .insert(*update.timestamp(), (update, HashSet::with_capacity(2)));
-        }
-        updates.sort_by_key(|u| u.timestamp().to_owned());
+        let change_index = SimSearch::new();
+        let updates: Vec<_> = vec![];
+        let index: Trie<_, BTreeMap<_, _>> = Trie::new();
 
         let tag_repo = TagRepo::new("../repo/tag").unwrap();
-        let mut all_tags = vec![];
-        for tag in tag_repo.list_tags().unwrap() {
-            println!("Tag {}", tag.name());
-            all_tags.push(tag.name().to_owned());
-            let tag = Arc::new(tag);
-            for ur in tag_repo.list_updates_in_tag(&tag).unwrap() {
-                let ur = ur.unwrap();
-                let (_update, tags) = index
-                    .get_mut(&ur.url)
-                    .expect("no tag entry for url")
-                    .get_mut(&ur.timestamp)
-                    .expect("no tag entry for timestamp");
-                tags.insert(tag.clone());
-            }
-        }
+        let all_tags = vec![];
 
-        Self {
+        let mut this = Self {
             doc_repo,
             updates,
             index,
             all_tags,
             change_index,
+        };
+
+        for update in update_repo.list_all(&"https://www.gov.uk/".parse().unwrap()).unwrap() {
+            let update = update.unwrap();
+            this.append_update(update);
         }
+        this.updates.sort_by_key(|u| u.timestamp().to_owned());
+
+        for tag in tag_repo.list_tags().unwrap() {
+            println!("Tag {}", tag.name());
+            this.all_tags.push(tag.name().to_owned());
+            let tag = Arc::new(tag);
+            for ur in tag_repo.list_updates_in_tag(&tag).unwrap() {
+                let ur = ur.unwrap();
+                this.add_tag(ur, tag.clone());
+            }
+        }
+
+        this
+    }
+
+    pub fn append_update(&mut self, update: Update) {
+        self.change_index.insert(update.update_ref().clone(), update.change());
+        let update = Arc::new(update);
+        self.updates.push(update.clone());
+        self.index
+            .entry(update.url().clone())
+            .or_insert_with(Default::default)
+            .insert(*update.timestamp(), (update, HashSet::with_capacity(2)));
+    }
+
+    pub fn add_tag(&mut self, ur: UpdateRef, tag: Arc<Tag>) {
+        let (_update, tags) = self
+            .index
+            .get_mut(&ur.url)
+            .expect("no tag entry for url")
+            .get_mut(&ur.timestamp)
+            .expect("no tag entry for timestamp");
+        tags.insert(tag);
     }
 
     pub fn list_updates(

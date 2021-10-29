@@ -4,6 +4,7 @@ use std::{
     mem,
     ops::Deref,
     str::FromStr,
+    sync::{Arc, RwLock},
 };
 
 use chrono::{DateTime, FixedOffset};
@@ -19,7 +20,7 @@ use crate::data::Data;
 
 use error::{CouldFind, Error};
 
-pub(crate) fn listen(addr: &str, data: Data) {
+pub fn listen(addr: &str, data: Arc<RwLock<Data>>) {
     println!("Loading data");
 
     println!("Listen on http://{}", addr);
@@ -28,9 +29,9 @@ pub(crate) fn listen(addr: &str, data: Data) {
         find_route!(
             rouille::match_assets(request, "./static"),
             handle_root(request),
-            handle_updates(request, &data),
-            handle_update(request, &data),
-            handle_doc_diff_page(request, &data)
+            handle_updates(request, &data.read().unwrap()),
+            handle_update(request, &data.read().unwrap()),
+            handle_doc_diff_page(request, &data.read().unwrap())
         )
     });
 }

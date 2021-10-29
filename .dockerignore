@@ -1,0 +1,9 @@
+repo
+gitgov-import
+tmp
+examples
+**/target
+**/.env
+**/*.md
+server/logs
+server/outbox

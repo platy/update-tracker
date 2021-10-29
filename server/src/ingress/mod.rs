@@ -1,4 +1,4 @@
-use anyhow::{bail, format_err, Context, Result};
+use anyhow::{format_err, Context, Result};
 use chrono::{Offset, TimeZone, Utc};
 use std::{
     io::{self, copy, Write},
@@ -221,10 +221,7 @@ impl Iterator for FetchDocs {
 pub fn retrieve_doc(url: &Url) -> Result<Doc> {
     // TODO return the doc and the urls of attachments, probably remove async, I can just use a thread pool and worker queue
     println!("retrieving url : {}", url);
-    let response = get(url.as_str()).call();
-    if let Some(err) = response.synthetic_error() {
-        bail!("Error retrieving : {}", err);
-    }
+    let response = get(url.as_str()).call().context("Error retrieving")?;
 
     if response.content_type() == "text/html" {
         let content = response.into_string().with_context(|| url.clone())?;

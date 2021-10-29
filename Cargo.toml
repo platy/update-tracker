@@ -4,11 +4,14 @@ version = "0.1.0"
 authors = ["Mike Bush <platy@njk.onl>"]
 edition = "2018"
 
+[workspace]
+members = ["server"]
+
 [dependencies]
 chrono = "0.4.19"
-url = "2.2.0"
+url = "2.2.2"
 
 [dev-dependencies]
-anyhow = "1.0.40"
-chrono-tz = "0.5.3"
+anyhow = "1.0.44"
+chrono-tz = "0.6.0"
 clap = "2.33.3"

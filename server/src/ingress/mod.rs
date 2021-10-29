@@ -272,23 +272,26 @@ impl<'a> NewRepoWriter<'a> {
         {
             let ts = ts.with_timezone(&ts.offset().fix());
 
-            self.update_repo
-                .create(url.clone().into(), ts, change)
-                .and_then(|update| {
-                    println!("Wrote update to update repo");
-                    let update_ref = update.update_ref().clone();
-                    if let Ok(mut data) = self.data.write() {
-                        data.append_update(update.into_inner());
-                    }
-                    self.tag_repo
-                        .tag_update(category.unwrap_or("unknown").to_owned(), update_ref)
-                        .map(|tag| {
-                            for e in tag.into_events() {
-                                self.handle_tag_event(e);
-                            }
-                        })?;
-                    Ok(())
-                })?;
+            let update_res = self.update_repo.create(url.clone().into(), ts, change).map(|update| {
+                println!("Wrote update to update repo");
+                if let Ok(mut data) = self.data.write() {
+                    data.append_update(update.into_inner());
+                }
+            });
+
+            if update_res.is_ok() || update_res.as_ref().unwrap_err().kind() == io::ErrorKind::AlreadyExists {
+                self.tag_repo
+                    .tag_update(
+                        category.unwrap_or("unknown").to_owned(),
+                        (url.to_owned().into(), ts).into(),
+                    )
+                    .map(|tag| {
+                        for e in tag.into_events() {
+                            self.handle_tag_event(e);
+                        }
+                    })?;
+            }
+            update_res?;
         }
         Ok(())
     }

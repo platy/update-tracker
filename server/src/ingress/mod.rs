@@ -163,15 +163,20 @@ impl<'a> UpdateEmailProcessor<'a> {
 
         for res in FetchDocs::fetch(url.clone()) {
             let (path, content) = res?;
-            commit_builder.add_doc(&path, &content)?;
 
             let mut url = url.clone();
             url.set_path(path.to_str().unwrap());
             let ts = Utc::now();
             let ts = ts.with_timezone(&ts.offset().fix());
-            if let Err(err) = self.new.write_doc(url, ts, content) {
+            if let Err(err) = self.new.write_doc(url, ts, &content) {
                 println!("Error writign to doc repo {}", err)
             }
+
+            let mut path = path;
+            if content.is_html() {
+                assert!(path.set_extension("html"));
+            }
+            commit_builder.add_doc(&path, &content)?;
         }
 
         commit_builder.commit_update(updated_at, change, category.as_deref())?;
@@ -194,10 +199,7 @@ impl FetchDocs {
         let doc = retrieve_doc(&url)?;
         self.urls
             .extend(doc.content.attachments().unwrap_or_default().iter().cloned());
-        let mut path = PathBuf::from(doc.url.path());
-        if doc.content.is_html() {
-            assert!(path.set_extension("html"));
-        }
+        let path = PathBuf::from(doc.url.path());
         println!("Writing doc to : {}", path.to_str().unwrap());
         Ok((path, doc.content))
     }
@@ -291,10 +293,15 @@ impl<'a> NewRepoWriter<'a> {
         Ok(())
     }
 
-    fn write_doc(&self, url: Url, ts: chrono::DateTime<chrono::FixedOffset>, content: DocContent) -> io::Result<()> {
+    fn write_doc(
+        &self,
+        url: Url,
+        ts: chrono::DateTime<chrono::FixedOffset>,
+        content: impl AsRef<[u8]>,
+    ) -> io::Result<()> {
         self.doc_repo
             .create(url.into(), ts)
-            .and_then(|mut doc| doc.write_all(content.as_bytes()).and_then(|_| doc.done()))
+            .and_then(|mut doc| doc.write_all(content.as_ref()).and_then(|_| doc.done()))
             .map(|doc| {
                 println!("Wrote doc to doc repo");
                 for e in doc.into_events() {

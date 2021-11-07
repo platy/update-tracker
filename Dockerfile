@@ -15,6 +15,8 @@ RUN cargo build --release -p update-tracker
 
 # We do not need the Rust toolchain to run the binary!
 FROM debian:buster-slim AS runtime
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app/server
+COPY ./server/static /app/server/static
 COPY --from=builder /app/target/release/update-tracker /usr/local/bin
 ENTRYPOINT ["/usr/local/bin/update-tracker"]

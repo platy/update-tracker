@@ -3,6 +3,7 @@ use std::{
     collections::{BTreeMap, HashSet},
     io::{self, Read},
     ops::Deref,
+    path::Path,
     sync::Arc,
 };
 
@@ -31,15 +32,15 @@ pub struct Data {
 }
 
 impl Data {
-    pub fn load() -> Self {
-        let update_repo = UpdateRepo::new("../repo/url").unwrap();
-        let doc_repo = DocRepo::new("../repo/url").unwrap();
+    pub fn load(repo_base: &Path) -> Self {
+        let update_repo = UpdateRepo::new(repo_base.join("url")).unwrap();
+        let doc_repo = DocRepo::new(repo_base.join("url")).unwrap();
 
         let change_index = SimSearch::new();
         let updates: Vec<_> = vec![];
         let index: Trie<_, BTreeMap<_, _>> = Trie::new();
 
-        let tag_repo = TagRepo::new("../repo/tag").unwrap();
+        let tag_repo = TagRepo::new(repo_base.join("tag")).unwrap();
         let all_tags = vec![];
 
         let mut this = Self {

@@ -5,5 +5,9 @@ examples
 **/target
 **/.env
 **/*.md
+*.yaml
 server/logs
 server/outbox
+target
+Dockerfile
+.dockerignore

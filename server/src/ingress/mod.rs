@@ -34,22 +34,23 @@ use std::{
     time::Duration,
 };
 
-pub fn run(data: Arc<RwLock<Data>>) -> Result<()> {
+pub fn run(new_repo_path: &Path, data: Arc<RwLock<Data>>) -> Result<()> {
     dotenv()?;
     let govuk_emails_inbox = dotenv::var("INBOX")?;
-    const ARCHIVE_DIR: &str = "outbox";
+    let outbox_var = dotenv::var("OUTBOX");
+    let outbox_dir = outbox_var.as_deref().unwrap_or("outbox");
     let git_repo_path = dotenv::var("GIT_REPO")?;
-    let git_reference = dotenv::var("GIT_REF")?;
-    let new_repo_path = dotenv::var("NEW_REPO")?;
+    let git_reference_var = dotenv::var("GIT_REF");
+    let git_reference = git_reference_var.as_deref().unwrap_or("refs/heads/main");
     fs::create_dir_all(&govuk_emails_inbox).context(format!("Error trying to create dir {}", &govuk_emails_inbox))?;
-    fs::create_dir_all(ARCHIVE_DIR).context(format!("Error trying to create dir {}", ARCHIVE_DIR))?;
+    fs::create_dir_all(outbox_dir).context(format!("Error trying to create dir {}", outbox_dir))?;
 
     git::push(&git_repo_path)?;
 
     loop {
         let mut update_email_processor = UpdateEmailProcessor::new(
             govuk_emails_inbox.as_ref(),
-            ARCHIVE_DIR.as_ref(),
+            outbox_dir.as_ref(),
             git_repo_path.as_ref(),
             &git_reference,
             new_repo_path.as_ref(),

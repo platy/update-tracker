@@ -41,9 +41,30 @@ spec:
       labels:
         app: update-tracker
     spec:
+      initContainers:
+      - name: prepare-repo
+        image: rg.nl-ams.scw.cloud/njkonl/clone-repo:0.3
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+          requests:
+            memory: "80Mi"
+            cpu: "10m"
+        volumeMounts:
+          - mountPath: "/repomount"
+            name: gitrepo
+          - mountPath: /root/.ssh
+            name: ssh-key
+            readOnly: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        args:
+          - /repomount/repo
+          - git@github.com:platy/gitgovuk.git
       containers:
       - name: smtp-dump
         image: rg.nl-ams.scw.cloud/njkonl/smtp-dump:0.1.1
+        terminationMessagePolicy: FallbackToLogsOnError
         resources:
           limits:
             memory: "128Mi"
@@ -78,6 +99,11 @@ spec:
             name: mail
           - mountPath: "/updates"
             name: updates
+          - mountPath: "/gitgovuk"
+            name: gitrepo
+          - mountPath: /root/.ssh
+            name: ssh-key
+            readOnly: true
         env:
           - name: INBOX
             value: /mail/inbox/mail.notifications.service.gov.uk
@@ -86,7 +112,7 @@ spec:
           - name: NEW_REPO
             value: /updates/repo
           - name: GIT_REPO
-            value: /updates/gitgovuk
+            value: /gitgovuk/repo
       imagePullSecrets:
       - name: regcred
       volumes:
@@ -96,6 +122,13 @@ spec:
         - name: updates
           persistentVolumeClaim:
             claimName: update-tracker
+        - name: gitrepo
+          persistentVolumeClaim:
+            claimName: gitgov-repo-claim
+        - name: ssh-key
+          secret:
+            secretName: gitgov-repo-sshcreds
+            defaultMode: 0600
 
 ---
 

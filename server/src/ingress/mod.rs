@@ -55,8 +55,8 @@ pub fn run(new_repo_path: &Path, data: Arc<RwLock<Data>>) -> Result<()> {
             govuk_emails_inbox.as_ref(),
             outbox_dir.as_ref(),
             git_repo_path.as_ref(),
-            &git_reference,
-            new_repo_path.as_ref(),
+            git_reference,
+            new_repo_path,
             &data,
         )?;
         let count = update_email_processor

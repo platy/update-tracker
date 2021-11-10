@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, ops::Deref};
 
 mod repository;
 pub use repository::TagRepo;
@@ -24,6 +24,14 @@ impl Entity for Tag {
     type WriteEvent = TagEvent;
 }
 
+impl Deref for Tag {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.name
+    }
+}
+
 impl fmt::Display for Tag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.name.fmt(f)
@@ -38,13 +46,13 @@ pub enum TagEvent {
     TagCreated { tag: Tag },
 }
 impl TagEvent {
-    pub(crate) fn tag_created(tag: &Tag) -> Self {
-        Self::TagCreated { tag: tag.clone() }
+    pub(crate) fn tag_created(tag: Tag) -> Self {
+        Self::TagCreated { tag }
     }
 
-    pub(crate) fn update_tagged(tag: &Tag, update_ref: &UpdateRef) -> Self {
+    pub(crate) fn update_tagged(tag: Tag, update_ref: &UpdateRef) -> Self {
         Self::UpdateTagged {
-            tag: tag.clone(),
+            tag,
             update_ref: update_ref.clone(),
         }
     }

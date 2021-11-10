@@ -32,6 +32,7 @@ fn fetch_and_strip_doc() {
             .parse()
             .unwrap(),
     )
+    .unwrap()
     .unwrap();
     assert_doc!(
         &doc,
@@ -51,6 +52,7 @@ fn fetch_and_strip_doc_with_attachments() {
             .parse()
             .unwrap(),
     )
+    .unwrap()
     .unwrap();
     assert_doc!(
         &doc,
@@ -85,7 +87,7 @@ fn fetch_file() {
     let doc = retrieve_doc(
         &"https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/722576/bus-open-data-case-for-change.pdf".parse().unwrap(),
     )
-    .unwrap();
+    .unwrap().unwrap();
     assert_file(
         &doc,
         "https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/722576/bus-open-data-case-for-change.pdf",

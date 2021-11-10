@@ -1,6 +1,6 @@
 use crate::repository::WriteResult;
-
 use super::*;
+
 use std::{
     fs::{self},
     io::{self, BufRead, BufReader, Write},
@@ -19,6 +19,7 @@ impl TagRepo {
         Ok(Self { base })
     }
 
+    /// Tag a url in the repo
     pub fn tag_update(&self, tag_name: String, update_ref: UpdateRef) -> WriteResult<Tag, 2> {
         let tag = Tag { name: tag_name };
         let path = self.path_for(&tag);
@@ -40,8 +41,8 @@ impl TagRepo {
         file.flush()?;
 
         let events = [
-            Some(TagEvent::update_tagged(&tag, &update_ref)),
-            is_new_tag.then(|| TagEvent::tag_created(&tag)),
+            Some(TagEvent::update_tagged(tag.clone(), &update_ref)),
+            is_new_tag.then(|| TagEvent::tag_created(tag.clone())),
         ];
         tag.with_events(events)
     }
@@ -59,13 +60,13 @@ impl TagRepo {
     /// Returns error if there is no tag
     pub fn list_updates_in_tag(
         &self,
-        tag: &Tag,
+        tag: &str,
     ) -> io::Result<impl Iterator<Item = Result<UpdateRef, <UpdateRef as FromStr>::Err>>> {
         let reader = BufReader::new(fs::File::open(&self.path_for(tag))?);
         Ok(reader.lines().map(|line| line.unwrap().parse()))
     }
 
-    fn path_for(&self, tag: &Tag) -> PathBuf {
-        self.base.join(&tag.name)
+    fn path_for(&self, tag: &str) -> PathBuf {
+        self.base.join(tag)
     }
 }

@@ -23,6 +23,7 @@ impl UpdateRepo {
         Ok(Self { repo })
     }
 
+    /// Write an update
     pub fn create(&self, url: Url, timestamp: DateTime<FixedOffset>, change: &str) -> WriteResult<Update, 2> {
         let path = self.path_for(&url, Some(&timestamp));
         let update = Update::new(url, timestamp, change.to_owned());
@@ -41,6 +42,7 @@ impl UpdateRepo {
         update.with_events(events)
     }
 
+    /// Write an update, or verify that the update is already written
     pub fn ensure(&self, url: Url, timestamp: DateTime<FixedOffset>, change: &str) -> WriteResult<Update, 2> {
         let path = self.path_for(&url, Some(&timestamp));
         let update = Update::new(url, timestamp, change.to_owned());
@@ -67,7 +69,7 @@ impl UpdateRepo {
         update.with_events(events)
     }
 
-    /// Returns error if there is no update
+    /// Get the latest update under a url. Returns error if there is no update
     pub fn latest(&self, url: &Url) -> io::Result<DateTime<FixedOffset>> {
         let dir = self.repo.read_leaves_for_url(url)?;
         let mut latest = None;

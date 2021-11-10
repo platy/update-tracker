@@ -9,6 +9,7 @@ use std::{
     vec,
 };
 
+/// A key of the `UrlRepo`
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 pub struct Url {
     url: url::Url,
@@ -78,6 +79,7 @@ impl Deref for Url {
     }
 }
 
+/// A `UrlRepo` is an on-disk data store, every url gets a directory, and each `UrlRepo` can store one or many entries therein, identified by it's `repo_key`
 pub struct UrlRepo {
     repo_key: &'static str,
     base: PathBuf,
@@ -108,6 +110,7 @@ impl UrlRepo {
         Ok(dir.into_iter())
     }
 
+    /// Read all leaves under a url
     pub fn read_leaves_for_url(
         &self,
         url: &Url,
@@ -135,6 +138,7 @@ impl UrlRepo {
         Ok(leaves.into_iter())
     }
 
+    /// Return an iterator over all the leaves of all urls under a url prefix
     pub fn list_all<Leaf>(
         &self,
         base_url: Url,
@@ -197,7 +201,7 @@ impl DirEntryKind {
     }
 }
 
-// iterator over all docs in the repo
+/// Iterator over all leaves of all urls in the repo
 pub struct IterUrlRepoLeaves<'r, Leaf> {
     repo: &'r UrlRepo,
     url: Url,

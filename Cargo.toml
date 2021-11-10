@@ -3,12 +3,13 @@ name = "update-repo"
 version = "0.1.0"
 authors = ["Mike Bush <platy@njk.onl>"]
 edition = "2018"
+include = ["src/**/*"]
 
 [workspace]
 members = ["server"]
 
 [dependencies]
-chrono = "0.4.19"
+chrono = { version = "0.4.19", default-features = false, features = ["std"] }
 url = "2.2.2"
 
 [dev-dependencies]

@@ -35,7 +35,7 @@ use std::{
 };
 
 pub fn run(new_repo_path: &Path, data: Arc<RwLock<Data>>) -> Result<()> {
-    dotenv()?;
+    let _ = dotenv();
     let govuk_emails_inbox = dotenv::var("INBOX")?;
     let outbox_var = dotenv::var("OUTBOX");
     let outbox_dir = outbox_var.as_deref().unwrap_or("outbox");
@@ -45,7 +45,10 @@ pub fn run(new_repo_path: &Path, data: Arc<RwLock<Data>>) -> Result<()> {
     fs::create_dir_all(&govuk_emails_inbox).context(format!("Error trying to create dir {}", &govuk_emails_inbox))?;
     fs::create_dir_all(outbox_dir).context(format!("Error trying to create dir {}", outbox_dir))?;
 
-    git::push(&git_repo_path)?;
+    println!("Pushing git repo {}", &git_repo_path);
+    git::push(&git_repo_path).context("Pushing git repo")?;
+
+    println!("Watching inbox {} for updates", &govuk_emails_inbox);
 
     loop {
         let mut update_email_processor = UpdateEmailProcessor::new(
@@ -130,7 +133,7 @@ impl<'a> UpdateEmailProcessor<'a> {
         let mut git_transaction = self.git.start_transaction()?;
         for change in &updates {
             if let Err(err) = self.handle_change(change, &mut git_transaction) {
-                eprintln!("Error processing change: {:?}: {}", change, &err);
+                eprintln!("Error processing change: {:?}: {:?}", change, &err);
                 return Ok(false);
             }
         }
@@ -196,13 +199,16 @@ impl FetchDocs {
         Self { urls }
     }
 
-    fn fetch_doc(&mut self, url: Url) -> Result<(PathBuf, DocContent)> {
-        let doc = retrieve_doc(&url)?;
-        self.urls
-            .extend(doc.content.attachments().unwrap_or_default().iter().cloned());
-        let path = PathBuf::from(doc.url.path());
-        println!("Writing doc to : {}", path.to_str().unwrap());
-        Ok((path, doc.content))
+    fn fetch_doc(&mut self, url: Url) -> Result<Option<(PathBuf, DocContent)>> {
+        if let Some(doc) = retrieve_doc(&url)? {
+            self.urls
+                .extend(doc.content.attachments().unwrap_or_default().iter().cloned());
+            let path = PathBuf::from(doc.url.path());
+            println!("Writing doc to : {}", path.to_str().unwrap());
+            Ok(Some((path, doc.content)))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -215,16 +221,22 @@ impl Iterator for FetchDocs {
                 println!("Ignoring link to offsite document : {}", &url);
                 continue;
             }
-            return Some(self.fetch_doc(url));
+            let doc = self.fetch_doc(url).transpose();
+            if doc.is_some() {
+                return doc;
+            }
         }
         None
     }
 }
 
-pub fn retrieve_doc(url: &Url) -> Result<Doc> {
-    // TODO return the doc and the urls of attachments, probably remove async, I can just use a thread pool and worker queue
+pub fn retrieve_doc(url: &Url) -> Result<Option<Doc>> {
     println!("retrieving url : {}", url);
-    let response = get(url.as_str()).call().context("Error retrieving")?;
+    let response = match get(url.as_str()).call() {
+        Ok(response) => response,
+        Err(ureq::Error::Status(410, _)) => return Ok(None), /* other responses could indicate that a retry should happen or that we have a programming issue, but 410 really means that we're requesting the intended document but it has been intentionally removed */
+        err => err.context("Error retrieving")?,
+    };
 
     if response.content_type() == "text/html" {
         let content = response.into_string().with_context(|| url.clone())?;
@@ -233,16 +245,16 @@ pub fn retrieve_doc(url: &Url) -> Result<Doc> {
             url: url.to_owned(),
         };
 
-        Ok(doc)
+        Ok(Some(doc))
     } else {
         let mut reader = response.into_reader();
         let mut buf = vec![];
         copy(&mut reader, &mut buf)
             .map_err(|err| format_err!("Error retrieving attachment : {}, url : {}", &err, &url))?;
-        Ok(Doc {
+        Ok(Some(Doc {
             url: url.to_owned(),
             content: DocContent::Other(buf),
-        })
+        }))
     }
 }
 

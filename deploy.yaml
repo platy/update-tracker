@@ -26,6 +26,19 @@ spec:
 
 ---
 
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitgov-repo
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 5Gi
+
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -46,11 +59,11 @@ spec:
         image: rg.nl-ams.scw.cloud/njkonl/clone-repo:0.3
         resources:
           limits:
-            memory: "128Mi"
-            cpu: "500m"
+            memory: "1Gi"
+            cpu: "1000m"
           requests:
-            memory: "80Mi"
-            cpu: "10m"
+            memory: "256Mi"
+            cpu: "100m"
         volumeMounts:
           - mountPath: "/repomount"
             name: gitrepo
@@ -84,7 +97,7 @@ spec:
           - name: TEMP_DIR
             value: /mail/tmp
       - name: update-tracker
-        image: rg.nl-ams.scw.cloud/njkonl/update-tracker:0.1.6
+        image: rg.nl-ams.scw.cloud/njkonl/update-tracker:0.1.13
         resources:
           limits:
             memory: "128Mi"
@@ -124,7 +137,7 @@ spec:
             claimName: update-tracker
         - name: gitrepo
           persistentVolumeClaim:
-            claimName: gitgov-repo-claim
+            claimName: gitgov-repo
         - name: ssh-key
           secret:
             secretName: gitgov-repo-sshcreds

@@ -1,27 +1,39 @@
 //! Helpers for git
 
-use std::{cell::RefCell, path::Path};
+use std::{cell::RefCell, path::Path, process::Command};
 
 use anyhow::{format_err, Context, Result};
 use git2::{Commit, Oid, Repository, Signature, Tree, TreeBuilder};
 
 pub fn push(repo_base: impl AsRef<Path>) -> Result<()> {
-    println!("Pushing to github");
-    let mut remote_callbacks = git2::RemoteCallbacks::new();
-    remote_callbacks.credentials(|_url, username_from_url, _allowed_types| {
-        git2::Cred::ssh_key(
-            username_from_url.unwrap(),
-            None,
-            std::path::Path::new(&format!("{}/.ssh/id_rsa", std::env::var("HOME").unwrap())),
-            None,
-        )
-    });
-    let repo = Repository::open(repo_base).context("Opening repo")?;
-    let mut remote = repo.find_remote("origin")?;
-    remote.push(
-        &["refs/heads/main"],
-        Some(git2::PushOptions::new().remote_callbacks(remote_callbacks)),
-    )?;
+    // let mut remote_callbacks = git2::RemoteCallbacks::new();
+    // remote_callbacks.credentials(|_url, username_from_url, _allowed_types| {
+    //     git2::Cred::ssh_key(
+    //         username_from_url.unwrap(),
+    //         None,
+    //         std::path::Path::new(&format!("{}/.ssh/id_rsa", std::env::var("HOME").unwrap())),
+    //         None,
+    //     )
+    // }).transfer_progress(|p| {
+    //     println!(
+    //         "Git pushing changes ({} received) {} objects {} ?",
+    //         p.received_bytes(), p.total_deltas() + p.total_objects(), p.indexed_deltas() + p.received_objects()
+    //     );
+    //     true
+    // })
+    // .sideband_progress(move |line| {
+    //     println!("sideband {}", std::str::from_utf8(line).unwrap_or(""));
+    //     true
+    // });
+    // let repo = Repository::open(repo_base).context("Opening repo")?;
+    // let mut remote = repo.find_remote("origin")?;
+    // println!("Pushing to remote");
+    // remote.push(
+    //     &["refs/heads/main"],
+    //     Some(git2::PushOptions::new().remote_callbacks(remote_callbacks)),
+    // )?;
+    let mut child = Command::new("git").current_dir(repo_base).arg("push").spawn()?;
+    println!("git push resulted in : {}", child.wait()?);
     Ok(())
 }
 

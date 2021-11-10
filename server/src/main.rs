@@ -14,7 +14,11 @@ fn main() {
     let data = Arc::new(RwLock::new(Data::load(new_repo_path.as_ref())));
     let data2 = data.clone();
 
-    thread::spawn(move || ingress::run(new_repo_path.as_ref(), data2));
+    thread::spawn(move || {
+        if let Err(err) = ingress::run(new_repo_path.as_ref(), data2) {
+            println!("Ingress failed : {} {:?}", err, err);
+        }
+    });
 
     web::listen(LISTEN_ADDR, data);
 }

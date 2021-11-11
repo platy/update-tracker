@@ -23,7 +23,7 @@ use self::{
 };
 use crate::data::Data;
 use dotenv::dotenv;
-use file_lock::FileLock;
+use file_locker::FileLock;
 
 use std::{
     collections::VecDeque,

@@ -1,6 +1,11 @@
-use anyhow::{format_err, Context, Result};
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use lol_html::{element, rewrite_str, RewriteStrSettings};
+use html5ever::{
+    serialize::{SerializeOpts, TraversalScope},
+    Attribute,
+    ParseOpts,
+};
+use html5streams::{HtmlPath, HtmlPathElement, HtmlSerializer, HtmlSink};
 use scraper::{Html, Selector};
 use url::Url;
 
@@ -101,37 +106,91 @@ impl DocUpdate {
     }
 }
 
+pub struct HtmlSanitizer<InputHandle: Eq + Copy, S: HtmlSink<InputHandle>> {
+    inner: S,
+    skip_handle: Option<InputHandle>,
+}
+
+impl<InputHandle: Eq + Copy, S: HtmlSink<InputHandle>> HtmlSanitizer<InputHandle, S> {
+    pub fn wrap(sink: S) -> Self {
+        Self {
+            inner: sink,
+            skip_handle: None,
+        }
+    }
+}
+
+impl<InputHandle: Eq + Copy, S: HtmlSink<InputHandle>> HtmlSink<InputHandle> for HtmlSanitizer<InputHandle, S> {
+    type Output = S::Output;
+
+    fn append_doctype_to_document(
+        &mut self,
+        name: html5ever::tendril::StrTendril,
+        public_id: html5ever::tendril::StrTendril,
+        system_id: html5ever::tendril::StrTendril,
+    ) {
+        self.inner.append_doctype_to_document(name, public_id, system_id)
+    }
+
+    fn append_element(&mut self, path: HtmlPath<'_, InputHandle>, mut element: HtmlPathElement<'_, InputHandle>) {
+        if let Some(skip_handle) = self.skip_handle {
+            if path.iter().any(|elem| elem.handle == skip_handle) {
+                return;
+            } else {
+                self.skip_handle = None
+            }
+        }
+        let attrs: Vec<_> = element
+            .attrs
+            .iter()
+            .filter(|Attribute { name, value: _ }| !["id", "aria-labelledby", "aria-hidden"].contains(&&*name.local))
+            .cloned() // TODO : avoid cloning when not necessary
+            .collect();
+        let skip = attrs.iter().any(|Attribute { name, value }| {
+            &name.local == "class"
+                && value
+                    .split_whitespace()
+                    .any(|class| class == "gem-c-contextual-sidebar")
+        });
+        if skip {
+            self.skip_handle = Some(element.handle);
+            return;
+        }
+        element.attrs = attrs.into();
+        self.inner.append_element(path, element)
+    }
+
+    fn append_text(&mut self, path: HtmlPath<InputHandle>, text: &str) {
+        if let Some(skip_handle) = self.skip_handle {
+            if path.iter().any(|elem| elem.handle == skip_handle) {
+                return;
+            } else {
+                self.skip_handle = None
+            }
+        }
+        self.inner.append_text(path, text)
+    }
+
+    fn reset(&mut self) -> Self::Output {
+        self.skip_handle = None;
+        self.inner.reset()
+    }
+}
+
 pub fn remove_ids(html: &str) -> Result<String> {
-    rewrite_str(
-        html,
-        RewriteStrSettings {
-            element_content_handlers: vec![
-                element!("[id]", |el| {
-                    // dynamically generated ids
-                    el.remove_attribute("id");
-                    Ok(())
-                }),
-                element!("[aria-labelledby]", |el| {
-                    // dynamicaly generated ids
-                    el.remove_attribute("aria-labelledby");
-                    Ok(())
-                }),
-                element!("[aria-hidden]", |el| {
-                    // i don't really want to strip out aria stuff, maybe just for the consistency test
-                    // dynamicaly generated ids
-                    el.remove_attribute("aria-hidden");
-                    Ok(())
-                }),
-                element!(".gem-c-contextual-sidebar", |el| {
-                    // this sidebar is not part of the document and can change for unrelated reasons
-                    el.remove();
-                    Ok(())
-                }),
-            ],
-            ..RewriteStrSettings::default()
-        },
-    )
-    .map_err(|err| format_err!("Error in rewriter : {}", err))
+    let opts = SerializeOpts {
+        scripting_enabled: false,
+        traversal_scope: TraversalScope::IncludeNode,
+        create_missing_parent: false,
+    };
+    let mut buf = Vec::new();
+    let mut html_serializer = HtmlSerializer::new(&mut buf, opts);
+    let sink = HtmlSanitizer::wrap(&mut html_serializer);
+    let mut parse_opts = ParseOpts::default();
+    parse_opts.tree_builder.exact_errors = true;
+    let parser = html5streams::parse_fragment(sink, parse_opts);
+    html5ever::tendril::TendrilSink::one(parser, html);
+    Ok(String::from_utf8(buf).unwrap())
 }
 
 fn attachments_from(html: &Html) -> Vec<String> {

@@ -15,8 +15,9 @@ rouille = "3.3.1"
 simsearch = "0.2.3"
 update-repo = { path = ".." }
 
+html5streams = {path = "../../html5streams"}
 scraper = "0.12.0"
-lol_html = "0.3.0"
+html5ever = "0.25.1"
 mailparse = "0.13.6"
 ureq = "2.3.0"
 git2 = { version = "0.13.23", default-features = false, features = ["ssh"] }

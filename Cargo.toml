@@ -9,7 +9,7 @@ include = ["src/**/*"]
 members = ["server"]
 
 [dependencies]
-chrono = { version = "0.4.19", default-features = false, features = ["std"] }
+chrono = { version = "0.4.19", default-features = false, features = ["std", "clock"] }
 url = "2.2.2"
 
 [dev-dependencies]

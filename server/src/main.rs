@@ -5,8 +5,6 @@ use std::{
 
 use update_tracker::{data::Data, ingress, web};
 
-const LISTEN_ADDR: &str = "0.0.0.0:80";
-
 fn main() {
     let new_repo_path = dotenv::var("NEW_REPO").unwrap();
     println!("Loading data");
@@ -20,5 +18,5 @@ fn main() {
         }
     });
 
-    web::listen(LISTEN_ADDR, data);
+    web::listen(dotenv::var("LISTEN_ADDR").as_deref().unwrap_or("127.0.0.1:8080"), data);
 }

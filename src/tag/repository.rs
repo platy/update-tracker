@@ -1,5 +1,5 @@
-use crate::repository::WriteResult;
 use super::*;
+use crate::repository::WriteResult;
 
 use std::{
     fs::{self},

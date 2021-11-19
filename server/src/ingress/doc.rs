@@ -1,12 +1,24 @@
-use anyhow::{Context, Result};
+use std::mem;
+
+use anyhow::{format_err, Context, Result};
 use chrono::{DateTime, Utc};
 use html5ever::{
+    local_name,
+    ns,
     serialize::{SerializeOpts, TraversalScope},
+    tendril::{StrTendril, TendrilSink},
     Attribute,
     ParseOpts,
 };
-use html5streams::{HtmlPath, HtmlPathElement, HtmlSerializer, HtmlSink};
-use scraper::{Html, Selector};
+use html5streams::{
+    css_select,
+    selector::{ContextualSelector, Selector},
+    HtmlContext,
+    HtmlPathElement,
+    HtmlSerializer,
+    HtmlSink,
+    RootFilter,
+};
 use url::Url;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -26,42 +38,40 @@ pub struct DocUpdate(DateTime<Utc>, String);
 
 impl DocContent {
     pub fn html(html: &str, url: Option<&Url>) -> Result<Self> {
-        let main_selector: Selector = Selector::parse("main").unwrap();
-        let history_selector: Selector = Selector::parse("#full-history li").unwrap();
-        let time_selector: Selector = Selector::parse("time").unwrap();
-        let p_selector: Selector = Selector::parse("p").unwrap();
+        let opts = SerializeOpts {
+            scripting_enabled: false,
+            traversal_scope: TraversalScope::IncludeNode,
+            create_missing_parent: false,
+        };
+        // stream is main selection -> sanitiser ( -> attachment extractor ) ( -> history selector -> history extractor ) -> serializer
+        let mut buf = Vec::new();
+        let mut html_serializer = HtmlSerializer::new(&mut buf, opts);
+        let history_selector = css_select!((#"full-history") ("li"));
+        let history_extractor = RootFilter::<_, _, _, Vec<_>>::wrap(HistoryExtractor::default(), history_selector);
+        let attachment_extractor = AttachmentExtractor::default();
+        let sink = HtmlSanitizer::wrap(((attachment_extractor, history_extractor), &mut html_serializer));
 
-        let html = Html::parse_document(html);
+        let mut parse_opts = ParseOpts::default();
+        parse_opts.tree_builder.exact_errors = true;
+        let parser = html5streams::parse_document(sink, parse_opts);
 
-        let main = html.select(&main_selector).next().context("No main found")?;
-        let mut history = vec![];
-        for history_elem in html.select(&history_selector) {
-            let time_elem = history_elem.select(&time_selector).next().context("No time found")?;
-            history.push(DocUpdate(
-                time_elem
-                    .value()
-                    .attr("datetime")
-                    .context("Missing \"datetime\" property on time tag")?
-                    .parse()?,
-                history_elem
-                    .select(&p_selector)
-                    .next()
-                    .context("Missing p tag")?
-                    .inner_html(),
-            ))
-        }
-        let mut attachments = vec![];
-        for attachment_url in attachments_from(&html) {
-            attachments.push(if let Some(url) = url {
-                url.join(&attachment_url)?
-            } else {
-                attachment_url.parse()?
-            });
-        }
+        let ((attachments, history), ()) = parser.one(html);
+
+        let attachments: Vec<Url> = if let Some(url) = url {
+            attachments
+                .into_iter()
+                .map(|attachment_url| url.join(&*attachment_url))
+                .collect::<Result<_, _>>()?
+        } else {
+            attachments
+                .into_iter()
+                .map(|attachment_url| attachment_url.parse())
+                .collect::<Result<_, _>>()?
+        };
         Ok(DocContent::DiffableHtml(
-            remove_ids(&main.html())?,
+            String::from_utf8(buf).unwrap(),
             attachments,
-            history,
+            history.into_iter().collect::<Result<_>>()?,
         ))
     }
 
@@ -109,6 +119,7 @@ impl DocUpdate {
 pub struct HtmlSanitizer<InputHandle: Eq + Copy, S: HtmlSink<InputHandle>> {
     inner: S,
     skip_handle: Option<InputHandle>,
+    main_handle: Option<InputHandle>,
 }
 
 impl<InputHandle: Eq + Copy, S: HtmlSink<InputHandle>> HtmlSanitizer<InputHandle, S> {
@@ -116,6 +127,7 @@ impl<InputHandle: Eq + Copy, S: HtmlSink<InputHandle>> HtmlSanitizer<InputHandle
         Self {
             inner: sink,
             skip_handle: None,
+            main_handle: None,
         }
     }
 }
@@ -125,16 +137,43 @@ impl<InputHandle: Eq + Copy, S: HtmlSink<InputHandle>> HtmlSink<InputHandle> for
 
     fn append_doctype_to_document(
         &mut self,
-        name: html5ever::tendril::StrTendril,
-        public_id: html5ever::tendril::StrTendril,
-        system_id: html5ever::tendril::StrTendril,
+        _name: &html5ever::tendril::StrTendril,
+        _public_id: &html5ever::tendril::StrTendril,
+        _system_id: &html5ever::tendril::StrTendril,
     ) {
-        self.inner.append_doctype_to_document(name, public_id, system_id)
     }
 
-    fn append_element(&mut self, path: HtmlPath<'_, InputHandle>, mut element: HtmlPathElement<'_, InputHandle>) {
+    fn append_element(
+        &mut self,
+        mut context: HtmlContext<'_, InputHandle>,
+        element: &HtmlPathElement<'_, InputHandle>,
+    ) {
+        // select
+        if let Some(select_handle) = self.main_handle {
+            if let Some(select_index) = context
+                .iter()
+                .enumerate()
+                .find_map(|(index, elem)| (elem.handle == select_handle).then(|| index))
+            {
+                context = &context[select_index..];
+            } else {
+                // select ends
+                self.main_handle = None;
+                return;
+            }
+        }
+        if self.main_handle.is_none() && css_select!("main").is_match(element) {
+            // select starts
+            context = &[];
+            let select_handle = element.handle;
+            self.main_handle = Some(select_handle);
+        } else if self.main_handle.is_none() {
+            return;
+        }
+
+        // skip
         if let Some(skip_handle) = self.skip_handle {
-            if path.iter().any(|elem| elem.handle == skip_handle) {
+            if context.iter().any(|elem| elem.handle == skip_handle) {
                 return;
             } else {
                 self.skip_handle = None
@@ -156,19 +195,31 @@ impl<InputHandle: Eq + Copy, S: HtmlSink<InputHandle>> HtmlSink<InputHandle> for
             self.skip_handle = Some(element.handle);
             return;
         }
+        let mut element = element.clone();
         element.attrs = attrs.into();
-        self.inner.append_element(path, element)
+        self.inner.append_element(context, &element)
     }
 
-    fn append_text(&mut self, path: HtmlPath<InputHandle>, text: &str) {
-        if let Some(skip_handle) = self.skip_handle {
-            if path.iter().any(|elem| elem.handle == skip_handle) {
-                return;
+    fn append_text(&mut self, context: HtmlContext<InputHandle>, text: &str) {
+        if let Some(select_handle) = self.main_handle {
+            if let Some(select_index) = context
+                .iter()
+                .enumerate()
+                .find_map(|(index, elem)| (elem.handle == select_handle).then(|| index))
+            {
+                let context = &context[select_index..];
+                if let Some(skip_handle) = self.skip_handle {
+                    if context.iter().any(|elem| elem.handle == skip_handle) {
+                        return;
+                    } else {
+                        self.skip_handle = None
+                    }
+                }
+                self.inner.append_text(context, text)
             } else {
-                self.skip_handle = None
+                self.main_handle = None
             }
         }
-        self.inner.append_text(path, text)
     }
 
     fn reset(&mut self) -> Self::Output {
@@ -177,29 +228,92 @@ impl<InputHandle: Eq + Copy, S: HtmlSink<InputHandle>> HtmlSink<InputHandle> for
     }
 }
 
-pub fn remove_ids(html: &str) -> Result<String> {
-    let opts = SerializeOpts {
-        scripting_enabled: false,
-        traversal_scope: TraversalScope::IncludeNode,
-        create_missing_parent: false,
-    };
-    let mut buf = Vec::new();
-    let mut html_serializer = HtmlSerializer::new(&mut buf, opts);
-    let sink = HtmlSanitizer::wrap(&mut html_serializer);
-    let mut parse_opts = ParseOpts::default();
-    parse_opts.tree_builder.exact_errors = true;
-    let parser = html5streams::parse_fragment(sink, parse_opts);
-    html5ever::tendril::TendrilSink::one(parser, html);
-    Ok(String::from_utf8(buf).unwrap())
+#[derive(Default)]
+struct AttachmentExtractor(Vec<StrTendril>);
+
+impl HtmlSink<u32> for AttachmentExtractor {
+    type Output = Vec<StrTendril>;
+
+    fn append_doctype_to_document(
+        &mut self,
+        _name: &html5ever::tendril::StrTendril,
+        _public_id: &html5ever::tendril::StrTendril,
+        _system_id: &html5ever::tendril::StrTendril,
+    ) {
+    }
+
+    fn append_element(&mut self, context: HtmlContext<'_, u32>, element: &HtmlPathElement<'_, u32>) {
+        use html5ever::*;
+
+        const HREF: QualName = QualName {
+            prefix: None,
+            ns: ns!(),
+            local: local_name!("href"),
+        };
+        let matcher =
+            css_select!((."attachment") (."title") ("a")).or(css_select!((."attachment") (."download") ("a")));
+        if matcher.context_match(context, element) {
+            if let Some(href) = element.attr(HREF) {
+                self.0.push(href.clone());
+            }
+        }
+    }
+
+    fn append_text(&mut self, _context: HtmlContext<u32>, _text: &str) {}
+
+    fn reset(&mut self) -> Self::Output {
+        mem::take(&mut self.0)
+    }
 }
 
-fn attachments_from(html: &Html) -> Vec<String> {
-    let attachment_selector = Selector::parse(".attachment .title a, .attachment .download a").unwrap();
-    let attachments = html
-        .select(&attachment_selector)
-        .map(|el| el.value().attr("href"))
-        .flatten()
-        .map(ToString::to_string)
-        .collect();
-    attachments
+#[derive(Default)]
+struct HistoryExtractor {
+    timestamp: Option<DateTime<Utc>>,
+    description: String,
+}
+
+impl HtmlSink<u32> for HistoryExtractor {
+    type Output = Result<DocUpdate>;
+
+    fn append_doctype_to_document(
+        &mut self,
+        _name: &html5ever::tendril::StrTendril,
+        _public_id: &html5ever::tendril::StrTendril,
+        _system_id: &html5ever::tendril::StrTendril,
+    ) {
+    }
+
+    fn append_element(&mut self, context: HtmlContext<'_, u32>, element: &HtmlPathElement<'_, u32>) {
+        use html5ever::*;
+        const DATETIME: QualName = QualName {
+            prefix: None,
+            ns: ns!(),
+            local: local_name!("datetime"),
+        };
+
+        if css_select!("time").context_match(context, element) {
+            self.timestamp = element
+                .attr(DATETIME)
+                .context("Missing \"datetime\" property on time tag")
+                .unwrap()
+                .parse()
+                .ok();
+        }
+    }
+
+    fn append_text(&mut self, context: HtmlContext<u32>, text: &str) {
+        if let Some(last) = context.last() {
+            if css_select!("p").context_match(&[], last) {
+                self.description = text.to_owned();
+            }
+        }
+    }
+
+    fn reset(&mut self) -> Self::Output {
+        let timestamp = self
+            .timestamp
+            .take()
+            .ok_or(format_err!("No timestamp found for history item"))?;
+        Ok(DocUpdate(timestamp, mem::take(&mut self.description)))
+    }
 }

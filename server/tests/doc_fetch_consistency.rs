@@ -1,10 +1,5 @@
 use pretty_assertions::assert_eq;
-use update_tracker::ingress::{
-    doc::{remove_ids, DocUpdate},
-    retrieve_doc,
-    Doc,
-    DocContent,
-};
+use update_tracker::ingress::{doc::DocUpdate, retrieve_doc, Doc, DocContent};
 
 macro_rules! assert_doc {
     ($doc:expr, $url:expr, $body:expr) => {
@@ -12,12 +7,12 @@ macro_rules! assert_doc {
         let url = $url;
         assert_eq!(doc.url.as_str(), url);
         if let DocContent::DiffableHtml(content, _, _) = &doc.content {
-            let diff = html_diff::get_differences(content, &remove_ids($body).unwrap()); // TODO pre strip test data
+            let diff = html_diff::get_differences($body, content);
             assert!(
                 diff.is_empty(),
-                "Found differences in file at url {} : {:#?}",
+                "Found differences in file at url {} : {}",
                 url,
-                diff,
+                diff.iter().map(|diff| diff.to_string()).collect::<String>(),
             );
         } else {
             panic!("Fail")
@@ -46,7 +41,7 @@ fn fetch_and_strip_doc() {
 }
 
 #[test]
-fn fetch_and_strip_doc_with_attachments() {
+fn fetch_and_strip_doc_with_attachments_and_history() {
     let doc = retrieve_doc(
         &"https://www.gov.uk/government/consultations/bus-services-act-2017-bus-open-data"
             .parse()
@@ -61,9 +56,9 @@ fn fetch_and_strip_doc_with_attachments() {
     );
     assert_eq!(doc.content.attachments().unwrap(),
         vec![
-            "https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/792313/bus-open-data-consultation-response.pdf".parse().unwrap(), 
-            "https://www.gov.uk/government/consultations/bus-services-act-2017-bus-open-data/bus-services-act-2017-bus-open-data-html".parse().unwrap(), 
-            "https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/722573/bus-services-act-2017-open-data-consultation.pdf".parse().unwrap(), 
+            "https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/792313/bus-open-data-consultation-response.pdf".parse().unwrap(),
+            "https://www.gov.uk/government/consultations/bus-services-act-2017-bus-open-data/bus-services-act-2017-bus-open-data-html".parse().unwrap(),
+            "https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/722573/bus-services-act-2017-open-data-consultation.pdf".parse().unwrap(),
             "https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/722576/bus-open-data-case-for-change.pdf".parse().unwrap(),
         ]);
     assert_eq!(

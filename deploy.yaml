@@ -56,7 +56,7 @@ spec:
     spec:
       initContainers:
       - name: prepare-repo
-        image: rg.nl-ams.scw.cloud/njkonl/clone-repo:0.3
+        image: rg.nl-ams.scw.cloud/njkonl/clone-repo:0.5
         resources:
           limits:
             memory: "1Gi"
@@ -100,10 +100,10 @@ spec:
         image: rg.nl-ams.scw.cloud/njkonl/update-tracker:0.1.13
         resources:
           limits:
-            memory: "128Mi"
+            memory: "256Mi"
             cpu: "500m"
           requests:
-            memory: "80Mi"
+            memory: "128Mi"
             cpu: "50m"
         ports:
         - containerPort: 80

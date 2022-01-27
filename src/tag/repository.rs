@@ -61,9 +61,12 @@ impl TagRepo {
     pub fn list_updates_in_tag(
         &self,
         tag: &str,
-    ) -> io::Result<impl Iterator<Item = Result<UpdateRef, <UpdateRef as FromStr>::Err>>> {
+    ) -> io::Result<impl Iterator<Item = Result<UpdateRef, (String, <UpdateRef as FromStr>::Err)>>> {
         let reader = BufReader::new(fs::File::open(&self.path_for(tag))?);
-        Ok(reader.lines().map(|line| line.unwrap().parse()))
+        Ok(reader.lines().map(|line| {
+            let s = line.unwrap();
+            s.parse().map_err(|e| (s, e))
+        }))
     }
 
     fn path_for(&self, tag: &str) -> PathBuf {

@@ -47,11 +47,14 @@ impl DocContent {
         }
         let mut attachments = vec![];
         for attachment_url in attachments_from(&html) {
-            attachments.push(if let Some(url) = url {
+            let attachment_url = if let Some(url) = url {
                 url.join(&attachment_url)?
             } else {
                 attachment_url.parse()?
-            });
+            };
+            if Some(&attachment_url) != url {
+                attachments.push(attachment_url);
+            }
         }
         Ok(DocContent::DiffableHtml(
             remove_ids(&main.html())?,

@@ -22,7 +22,7 @@ spec:
   volumeMode: Filesystem
   resources:
     requests:
-      storage: 10Gi
+      storage: 40Gi
 
 ---
 
@@ -36,7 +36,7 @@ spec:
   volumeMode: Filesystem
   resources:
     requests:
-      storage: 5Gi
+      storage: 15Gi
 
 ---
 apiVersion: apps/v1
@@ -97,7 +97,7 @@ spec:
           - name: TEMP_DIR
             value: /mail/tmp
       - name: update-tracker
-        image: rg.nl-ams.scw.cloud/njkonl/update-tracker:0.1.13
+        image: rg.nl-ams.scw.cloud/njkonl/update-tracker:0.1.15
         resources:
           limits:
             memory: "256Mi"
@@ -167,7 +167,7 @@ metadata:
     kubernetes.io/ingress.class: "nginx"
 spec:
   rules:
-  - host: update-tracker.njk.onl
+  - host: govdiff.njk.onl
     http:
       paths:
       - path: /
@@ -179,8 +179,23 @@ spec:
         pathType: Prefix
   tls:
   - hosts:
-    - update-tracker.njk.onl
-    secretName: update-tracker-cert
+    - govdiff.njk.onl
+    secretName: govdiff-cert
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: govdiff
+spec:
+  dnsNames:
+  - govdiff.njk.onl
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: letsencrypt-production
+  secretName: govdiff-cert
 
 ---
 

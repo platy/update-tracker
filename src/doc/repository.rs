@@ -181,9 +181,9 @@ impl TempDoc<'_> {
     fn check_duplicate_neighbours(&mut self, buf: &[u8]) -> io::Result<()> {
         use io::Read;
 
-        let mut comparison_buf = &mut self.buffer[..buf.len()];
+        let comparison_buf = &mut self.buffer[..buf.len()];
         if let Some((_, file)) = &mut self.identical_before {
-            match file.read_exact(&mut comparison_buf) {
+            match file.read_exact(comparison_buf) {
                 Err(e) => {
                     if e.kind() == io::ErrorKind::UnexpectedEof {
                         self.identical_before = None;
@@ -202,7 +202,7 @@ impl TempDoc<'_> {
             }
         }
         if let Some((_, file)) = &mut self.identical_after {
-            match file.read_exact(&mut comparison_buf) {
+            match file.read_exact(comparison_buf) {
                 Err(e) => {
                     if e.kind() == io::ErrorKind::UnexpectedEof {
                         self.identical_after = None;

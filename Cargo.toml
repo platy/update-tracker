@@ -9,10 +9,10 @@ include = ["src/**/*"]
 members = ["server"]
 
 [dependencies]
-chrono = { version = "0.4.19", default-features = false, features = ["std"] }
+chrono = { version = "0.4.19", default-features = false, features = ["std", "clock"] }
 url = "2.2.2"
 
 [dev-dependencies]
 anyhow = "1.0.44"
 chrono-tz = "0.6.0"
-clap = "2.33.3"
+clap = "3.0"

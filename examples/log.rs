@@ -1,6 +1,6 @@
 use anyhow::*;
 use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, Utc};
-use clap::clap_app;
+use clap::Parser;
 use std::{
     collections::BTreeSet,
     convert::TryFrom,
@@ -13,24 +13,28 @@ use update_repo::{
     update::{Update, UpdateRef, UpdateRefByTimestamp, UpdateRefByUrl, UpdateRepo},
 };
 
-fn main() -> Result<()> {
-    let matches = clap_app!(myapp =>
-        (version: "0.1")
-        (author: "Mike Bush <platy@njk.onl>")
-        (about: "Lists updates in the update tracker repo")
-        (@arg ORDER: -o --order +takes_value "Orders updates, either [u]rl or [t]imestamp (default)")
-        (@arg FILTER: ... "Filter terms which reduce the output")
-        // (@arg verbose: -v --verbose "Print test information verbosely")
-    )
-    .get_matches();
+/// Lists updates in the update tracker repo
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    /// Orders updates, either [u]rl or [t]imestamp (default)
+    #[clap(short, long, default_value_t = String::from("timestamp"))]
+    order: String,
 
-    let filter = Filter::try_from(matches.values_of("FILTER"))?;
+    /// Filter terms which reduce the output
+    filter: Vec<String>,
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+
+    let filter = Filter::try_from(args.filter)?;
     eprintln!("Searching {:?}", &filter);
 
-    match matches.value_of("ORDER") {
-        Some("u" | "url") => list_updates::<UpdateRefByUrl<_>>(filter)?,
-        Some("t" | "time" | "timestamp") | None => list_updates::<UpdateRefByTimestamp>(filter)?,
-        Some(other) => bail!("Unknown sort ordering '{}', expected 'url' or 'timestamp'", other),
+    match args.order.as_str() {
+        "u" | "url" => list_updates::<UpdateRefByUrl<_>>(filter)?,
+        "t" | "time" | "timestamp" => list_updates::<UpdateRefByTimestamp>(filter)?,
+        other => bail!("Unknown sort ordering '{}', expected 'url' or 'timestamp'", other),
     }
 
     Ok(())
@@ -104,40 +108,38 @@ struct Filter {
     age_range: (Bound<Duration>, Bound<Duration>),
 }
 
-impl<'s> TryFrom<Option<clap::Values<'s>>> for Filter {
+impl<'s> TryFrom<Vec<String>> for Filter {
     type Error = anyhow::Error;
 
-    fn try_from(values: Option<clap::Values<'s>>) -> Result<Self, Self::Error> {
+    fn try_from(values: Vec<String>) -> Result<Self, Self::Error> {
         let mut tags = vec![];
         let mut url_prefix = None;
         let mut date_range = (Bound::Unbounded, Bound::Unbounded);
         let mut age_range = (Bound::Unbounded, Bound::Unbounded);
-        if let Some(values) = values {
-            for token in values {
-                if let Some(mut tag) = token.strip_prefix("#\"") {
-                    // tag until next double quote
-                    tag = &tag[..(2 + tag
-                        .find('"')
-                        .context(format!("Missing matching double quote on '{}'", tag))?)];
-                    tags.push(Tag::new(tag.to_owned()));
-                } else if let Some(tag) = token.strip_prefix('#') {
-                    // tag until next whitespace
-                    tags.push(Tag::new(tag.to_owned()));
-                } else if token.starts_with("https://www.gov.uk/") {
-                    url_prefix = Some(token.parse()?);
-                } else if let Some((from, to)) = token.split_once("...") {
-                    age_range = (
-                        Filter::parse_age_bound(to)?.map_or(Bound::Unbounded, Bound::Included),
-                        Filter::parse_age_bound(from)?.map_or(Bound::Unbounded, Bound::Excluded),
-                    );
-                } else if let Some((from, to)) = token.split_once("..") {
-                    date_range = (
-                        Filter::parse_date_bound(from)?.map_or(Bound::Unbounded, Bound::Included),
-                        Filter::parse_date_bound(to)?.map_or(Bound::Unbounded, Bound::Excluded),
-                    );
-                } else {
-                    bail!("Unrecognised filter {}", token);
-                }
+        for token in values {
+            if let Some(mut tag) = token.strip_prefix("#\"") {
+                // tag until next double quote
+                tag = &tag[..(2 + tag
+                    .find('"')
+                    .context(format!("Missing matching double quote on '{}'", tag))?)];
+                tags.push(Tag::new(tag.to_owned()));
+            } else if let Some(tag) = token.strip_prefix('#') {
+                // tag until next whitespace
+                tags.push(Tag::new(tag.to_owned()));
+            } else if token.starts_with("https://www.gov.uk/") {
+                url_prefix = Some(token.parse()?);
+            } else if let Some((from, to)) = token.split_once("...") {
+                age_range = (
+                    Filter::parse_age_bound(to)?.map_or(Bound::Unbounded, Bound::Included),
+                    Filter::parse_age_bound(from)?.map_or(Bound::Unbounded, Bound::Excluded),
+                );
+            } else if let Some((from, to)) = token.split_once("..") {
+                date_range = (
+                    Filter::parse_date_bound(from)?.map_or(Bound::Unbounded, Bound::Included),
+                    Filter::parse_date_bound(to)?.map_or(Bound::Unbounded, Bound::Excluded),
+                );
+            } else {
+                bail!("Unrecognised filter {}", token);
             }
         }
         Ok(Filter {

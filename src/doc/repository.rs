@@ -8,7 +8,8 @@ use chrono::DateTime;
 use core::panic;
 use std::{
     error::Error,
-    fs, io::{self, Read},
+    fs,
+    io::{self, Read},
     path::{Path, PathBuf},
 };
 
@@ -210,12 +211,14 @@ impl<'r> DeduplicatingWriter<'r> {
 
     pub fn done(mut self) -> WriteResult<DocumentVersion, 2> {
         if let Some((_, file)) = &mut self.identical_before {
-            if file.read(&mut[0]).is_err() { // file is EOF, so finishes at this point too
+            if file.read(&mut [0]).is_err() {
+                // file is EOF, so finishes at this point too
                 self.identical_before = None;
             }
         }
         if let Some((_, file)) = &mut self.identical_after {
-            if file.read(&mut[0]).is_err() { // file is EOF, so finishes at this point too
+            if file.read(&mut [0]).is_err() {
+                // file is EOF, so finishes at this point too
                 self.identical_after = None;
             }
         }
@@ -227,9 +230,9 @@ impl<'r> DeduplicatingWriter<'r> {
         }
         let (is_new_doc, _file) = self.really_flush()?;
         if let Some((after, _)) = self.identical_after {
-                fs::remove_file(self.repo.path_for_version(&after))?;
-                let events = [Some(DocEvent::updated(&self.doc)), Some(DocEvent::deleted(&after))];
-                return self.doc.with_events(events)
+            fs::remove_file(self.repo.path_for_version(&after))?;
+            let events = [Some(DocEvent::updated(&self.doc)), Some(DocEvent::deleted(&after))];
+            return self.doc.with_events(events);
         }
         let events = [
             Some(DocEvent::updated(&self.doc)),

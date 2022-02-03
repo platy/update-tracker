@@ -39,8 +39,14 @@ use std::{
 pub fn run(new_repo_path: &Path, data: Arc<RwLock<Data>>) -> Result<()> {
     let _ = dotenv();
     let govuk_emails_inbox = dotenv::var("INBOX")?;
-    let outbox_dir = dotenv::var("OUTBOX").ok().and_then(|s| s.parse().ok()).unwrap_or_else(|| new_repo_path.join("outbox"));
-    let work_dir = dotenv::var("WORKDIR").ok().and_then(|s| s.parse().ok()).unwrap_or_else(|| new_repo_path.join("work"));
+    let outbox_dir = dotenv::var("OUTBOX")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_else(|| new_repo_path.join("outbox"));
+    let work_dir = dotenv::var("WORKDIR")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_else(|| new_repo_path.join("work"));
     let git_repo_path = dotenv::var("GIT_REPO")?;
     let git_reference_var = dotenv::var("GIT_REF");
     let git_reference = git_reference_var.as_deref().unwrap_or("refs/heads/main");

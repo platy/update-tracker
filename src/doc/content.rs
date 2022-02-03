@@ -54,6 +54,7 @@ impl DocContent {
             attachments
                 .into_iter()
                 .map(|attachment_url| url.join(&*attachment_url))
+                .filter(|attachment_url| attachment_url.as_ref() != Ok(url))
                 .collect::<Result<_, _>>()?
         } else {
             attachments

@@ -73,10 +73,11 @@ impl FromStr for UpdateRef {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut url: url::Url = s.parse()?;
-        let timestamp = url
-            .fragment()
-            .ok_or(UpdateRefParseError::FragmentNotProvided)?
-            .parse()?;
+        let timestamp = if let Some(fragment) = url.fragment() {
+            fragment.parse()?
+        } else {
+            return Err(UpdateRefParseError::FragmentNotProvided(url));
+        };
         url.set_fragment(None);
         Ok(UpdateRef {
             url: url.into(),
@@ -95,7 +96,7 @@ impl From<(Url, DateTime<FixedOffset>)> for UpdateRef {
 pub enum UpdateRefParseError {
     ChronoParseError(chrono::ParseError),
     UrlParseError(url::ParseError),
-    FragmentNotProvided,
+    FragmentNotProvided(url::Url),
 }
 
 impl From<chrono::ParseError> for UpdateRefParseError {
@@ -115,7 +116,7 @@ impl std::error::Error for UpdateRefParseError {
         match self {
             UpdateRefParseError::ChronoParseError(err) => Some(err),
             UpdateRefParseError::UrlParseError(err) => Some(err),
-            UpdateRefParseError::FragmentNotProvided => None,
+            UpdateRefParseError::FragmentNotProvided(_) => None,
         }
     }
 }
@@ -125,7 +126,7 @@ impl fmt::Display for UpdateRefParseError {
         match self {
             UpdateRefParseError::ChronoParseError(err) => write!(f, "Error parsing timestamp : {}", err),
             UpdateRefParseError::UrlParseError(err) => write!(f, "Error parsing url : {}", err),
-            UpdateRefParseError::FragmentNotProvided => f.write_str("Timestamp fragment not provided"),
+            UpdateRefParseError::FragmentNotProvided(url) => write!(f, "Timestamp fragment not provided in {}", url),
         }
     }
 }

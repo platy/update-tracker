@@ -39,13 +39,13 @@ use std::{
 pub fn run(new_repo_path: &Path, data: Arc<RwLock<Data>>) -> Result<()> {
     let _ = dotenv();
     let govuk_emails_inbox = dotenv::var("INBOX")?;
-    let outbox_var = dotenv::var("OUTBOX");
-    let outbox_dir = outbox_var.as_deref().unwrap_or("outbox");
+    let outbox_dir = dotenv::var("OUTBOX").ok().and_then(|s| s.parse().ok()).unwrap_or_else(|| new_repo_path.join("outbox"));
+    let work_dir = dotenv::var("WORKDIR").ok().and_then(|s| s.parse().ok()).unwrap_or_else(|| new_repo_path.join("work"));
     let git_repo_path = dotenv::var("GIT_REPO")?;
     let git_reference_var = dotenv::var("GIT_REF");
     let git_reference = git_reference_var.as_deref().unwrap_or("refs/heads/main");
     fs::create_dir_all(&govuk_emails_inbox).context(format!("Error trying to create dir {}", &govuk_emails_inbox))?;
-    fs::create_dir_all(outbox_dir).context(format!("Error trying to create dir {}", outbox_dir))?;
+    fs::create_dir_all(&outbox_dir).context(format!("Error trying to create dir {:?}", &outbox_dir))?;
 
     println!("Pushing git repo {}", &git_repo_path);
     git::push(&git_repo_path).context("Pushing git repo")?;
@@ -54,7 +54,8 @@ pub fn run(new_repo_path: &Path, data: Arc<RwLock<Data>>) -> Result<()> {
 
     let mut update_email_processor = UpdateEmailProcessor::new(
         govuk_emails_inbox.as_ref(),
-        outbox_dir.as_ref(),
+        &outbox_dir,
+        &work_dir,
         git_repo_path.as_ref(),
         git_reference,
         new_repo_path,
@@ -75,6 +76,7 @@ pub fn run(new_repo_path: &Path, data: Arc<RwLock<Data>>) -> Result<()> {
 struct UpdateEmailProcessor<'a> {
     in_dir: &'a Path,
     out_dir: &'a Path,
+    work_dir: &'a Path,
     git: GitRepoWriter<'a>,
     new: NewRepoWriter<'a>,
 }
@@ -83,6 +85,7 @@ impl<'a> UpdateEmailProcessor<'a> {
     fn new(
         in_dir: &'a Path,
         out_dir: &'a Path,
+        work_dir: &'a Path,
         git_repo: &'a Path,
         git_reference: &'a str,
         new_repo: &Path,
@@ -91,6 +94,7 @@ impl<'a> UpdateEmailProcessor<'a> {
         Ok(Self {
             in_dir,
             out_dir,
+            work_dir,
             git: GitRepoWriter::new(git_repo, git_reference)?,
             new: NewRepoWriter::new(new_repo, data)?,
         })
@@ -124,8 +128,15 @@ impl<'a> UpdateEmailProcessor<'a> {
     }
 
     fn process_email_update_file(&mut self, to_dir_name: impl AsRef<Path>, dir_entry: &fs::DirEntry) -> Result<bool> {
+        let working_path = self.work_dir.join(&to_dir_name).join(dir_entry.file_name());
+        fs::create_dir_all(working_path.parent().unwrap()).context("Creating working dir")?;
+        fs::rename(dir_entry.path(), &working_path).context(format!(
+            "Renaming file {} to {}",
+            dir_entry.path().to_str().unwrap_or_default(),
+            &working_path.to_str().unwrap_or_default()
+        ))?;
         let data = {
-            let mut lock = FileLock::lock(dir_entry.path().to_str().context("error")?, true, false)
+            let mut lock = FileLock::lock(working_path.to_str().context("error")?, true, false)
                 .context("Locking file email file")?;
             let mut bytes = Vec::with_capacity(lock.file.metadata().map(|m| m.len() as usize + 1).unwrap_or(0));
             lock.file.read_to_end(&mut bytes).context("Reading email file")?;
@@ -141,11 +152,11 @@ impl<'a> UpdateEmailProcessor<'a> {
         }
         // successfully handled, 'commit' the new commits by updating the reference and then move email to outbox
         git_transaction.commit(&format!("Added updates from {:?}", dir_entry.path()))?;
-        let done_path = self.out_dir.join(to_dir_name).join(dir_entry.file_name());
+        let done_path = self.out_dir.join(&to_dir_name).join(dir_entry.file_name());
         fs::create_dir_all(done_path.parent().unwrap()).context("Creating outbox dir")?;
-        fs::rename(dir_entry.path(), &done_path).context(format!(
+        fs::rename(&working_path, &done_path).context(format!(
             "Renaming file {} to {}",
-            dir_entry.path().to_str().unwrap_or_default(),
+            working_path.to_str().unwrap_or_default(),
             &done_path.to_str().unwrap_or_default()
         ))?;
         Ok(true)

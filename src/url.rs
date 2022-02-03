@@ -1,8 +1,7 @@
 use core::fmt;
 use std::{
     borrow::Borrow,
-    fs,
-    io,
+    fs, io,
     ops::Deref,
     path::{Path, PathBuf},
     str::FromStr,

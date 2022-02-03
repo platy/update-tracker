@@ -1,0 +1,176 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'update-tracker'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=update-tracker"
+                ],
+                "filter": {
+                    "name": "update-tracker",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'update-tracker'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=update-tracker",
+                    "--package=update-tracker"
+                ],
+                "filter": {
+                    "name": "update-tracker",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'update-tracker'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=update-tracker",
+                    "--package=update-tracker"
+                ],
+                "filter": {
+                    "name": "update-tracker",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'doc_fetch_consistency'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=doc_fetch_consistency",
+                    "--package=update-tracker"
+                ],
+                "filter": {
+                    "name": "doc_fetch_consistency",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'update-repo'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=update-repo"
+                ],
+                "filter": {
+                    "name": "update-repo",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'clone_url_repo'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=clone_url_repo",
+                    "--package=update-repo"
+                ],
+                "filter": {
+                    "name": "clone_url_repo",
+                    "kind": "bin"
+                }
+            },
+            "args": ["repo/url", "repoclone/url"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'clone_url_repo'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=clone_url_repo",
+                    "--package=update-repo"
+                ],
+                "filter": {
+                    "name": "clone_url_repo",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug example 'log'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=log",
+                    "--package=update-repo"
+                ],
+                "filter": {
+                    "name": "log",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in example 'log'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--example=log",
+                    "--package=update-repo"
+                ],
+                "filter": {
+                    "name": "log",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

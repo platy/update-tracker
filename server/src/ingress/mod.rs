@@ -1,20 +1,22 @@
 use anyhow::{format_err, Context, Result};
 use chrono::{Offset, TimeZone, Utc};
 use std::{
+    cell::RefCell,
     io::{self, copy, Write},
     sync::{Arc, RwLock},
 };
 use update_repo::{
-    doc::{DocEvent, DocRepo},
+    doc::{
+        content::{Doc, DocContent},
+        DocEvent, DocRepo,
+    },
     tag::{TagEvent, TagRepo},
     update::UpdateRepo,
 };
 use ureq::get;
 use url::Url;
 
-pub mod doc;
 pub mod email_update;
-pub use doc::{Doc, DocContent};
 pub mod git;
 
 use self::{
@@ -50,15 +52,15 @@ pub fn run(new_repo_path: &Path, data: Arc<RwLock<Data>>) -> Result<()> {
 
     println!("Watching inbox {} for updates", &govuk_emails_inbox);
 
+    let mut update_email_processor = UpdateEmailProcessor::new(
+        govuk_emails_inbox.as_ref(),
+        outbox_dir.as_ref(),
+        git_repo_path.as_ref(),
+        git_reference,
+        new_repo_path,
+        &data,
+    )?;
     loop {
-        let mut update_email_processor = UpdateEmailProcessor::new(
-            govuk_emails_inbox.as_ref(),
-            outbox_dir.as_ref(),
-            git_repo_path.as_ref(),
-            git_reference,
-            new_repo_path,
-            &data,
-        )?;
         let count = update_email_processor
             .process_updates()
             .expect("the processing fails, the repo may be unclean");
@@ -239,9 +241,9 @@ pub fn retrieve_doc(url: &Url) -> Result<Option<Doc>> {
     };
 
     if response.content_type() == "text/html" {
-        let content = response.into_string().with_context(|| url.clone())?;
+        let mut content = response.into_reader();
         let doc = Doc {
-            content: DocContent::html(&content, Some(url))?,
+            content: DocContent::html(&mut content, Some(url)).map_err(|e| format_err!("Problem {}", e))?,
             url: url.to_owned(),
         };
 
@@ -263,6 +265,7 @@ struct NewRepoWriter<'a> {
     doc_repo: DocRepo,
     tag_repo: TagRepo,
     data: &'a RwLock<Data>,
+    write_avoidance_buffer: RefCell<Vec<u8>>,
 }
 impl<'a> NewRepoWriter<'a> {
     fn new(new_repo: &Path, data: &'a RwLock<Data>) -> Result<Self> {
@@ -274,6 +277,7 @@ impl<'a> NewRepoWriter<'a> {
             doc_repo,
             tag_repo,
             data,
+            write_avoidance_buffer: RefCell::new(Vec::new()),
         })
     }
 
@@ -316,7 +320,7 @@ impl<'a> NewRepoWriter<'a> {
         content: impl AsRef<[u8]>,
     ) -> io::Result<()> {
         self.doc_repo
-            .create(url.into(), ts)
+            .create(url.into(), ts, &mut *self.write_avoidance_buffer.borrow_mut())
             .and_then(|mut doc| doc.write_all(content.as_ref()).and_then(|_| doc.done()))
             .map(|doc| {
                 println!("Wrote doc to doc repo");

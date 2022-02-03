@@ -5,10 +5,10 @@ use crate::{
 };
 
 use chrono::DateTime;
+use core::panic;
 use std::{
     error::Error,
-    fs,
-    io,
+    fs, io::{self, Read},
     path::{Path, PathBuf},
 };
 
@@ -23,37 +23,19 @@ impl DocRepo {
     }
 
     /// Create a [`DocumentVersion`] and return a writer to write the content
-    pub fn create(&self, url: Url, timestamp: DateTime<FixedOffset>) -> io::Result<TempDoc> {
+    pub fn create<'r>(
+        &'r self,
+        url: Url,
+        timestamp: DateTime<FixedOffset>,
+        write_avoidance_buffer: &'r mut Vec<u8>,
+    ) -> io::Result<DeduplicatingWriter<'r>> {
         let doc = DocumentVersion { url, timestamp };
-        let path = self.path_for_version(&doc);
-        let is_new_doc = !self.document_exists(&doc.url)?;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let file = fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
-        let open_neighbour = |dv| -> io::Result<_> {
-            let path = self.path_for_version(&dv);
-            let file = fs::File::open(&path)?;
-            Ok((dv, file))
-        };
-        let (before, after) = self
-            .neighbours(&doc)
-            .map_err(|e| NeighbourCheckError::io(e, &"Finding neighbours"))?;
-        let identical_before = before.map(open_neighbour).transpose()?;
-        let identical_after = after.map(open_neighbour).transpose()?;
-        Ok(TempDoc {
-            is_new_doc,
-            doc,
-            file,
-            repo: self,
-            identical_before,
-            identical_after,
-            buffer: [0; DUPLICATE_CHECK_BUFFER_SIZE],
-        })
+        write_avoidance_buffer.clear();
+        DeduplicatingWriter::new(doc, self, write_avoidance_buffer)
     }
 
     /// Open a [`DocumentVersion`] for reading
-    pub fn open(&self, doc_version: &DocumentVersion) -> io::Result<impl io::Read> {
+    pub fn open(&self, doc_version: &DocumentVersion) -> io::Result<impl io::Read + io::Seek> {
         fs::File::open(self.path_for_version(doc_version))
     }
 
@@ -142,12 +124,12 @@ impl DocRepo {
 }
 
 const DUPLICATE_CHECK_BUFFER_SIZE: usize = 1024;
+const WRITE_AVOIDANCE_BUFFER_LIMIT: usize = 32 * 1024;
 
 /// TODO Maybe this should write to a temp file to start with and then be moved into place, that way the whole repo structure will consist of complete files
-pub struct TempDoc<'r> {
-    is_new_doc: bool, // TODO replace with something better when fixing the above
+pub struct DeduplicatingWriter<'r> {
     doc: DocumentVersion,
-    file: fs::File,
+    state: DeduplicatingWriterState<'r>,
     repo: &'r DocRepo,
     /// if `Some` this is a version that is timestamped directly before the one being written, as as far as the current doc has been written, both are identical
     identical_before: Option<(DocumentVersion, fs::File)>,
@@ -155,35 +137,111 @@ pub struct TempDoc<'r> {
     identical_after: Option<(DocumentVersion, fs::File)>,
     buffer: [u8; DUPLICATE_CHECK_BUFFER_SIZE],
 }
+enum DeduplicatingWriterState<'b> {
+    /// the file is being directly written to
+    Writing {
+        file: fs::File,
+        is_new_doc: bool, // TODO replace with something better when fixing the above
+    },
+    /// writing to a buffer to optimise for the case that it is a duplicate and doesn't need to be written
+    Buffering(io::Cursor<&'b mut Vec<u8>>),
+}
+impl<'r> DeduplicatingWriter<'r> {
+    fn new(doc: DocumentVersion, repo: &'r DocRepo, write_avoidance_buffer: &'r mut Vec<u8>) -> io::Result<Self> {
+        let path = repo.path_for_version(&doc);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let open_neighbour = |dv| -> io::Result<_> {
+            let path = repo.path_for_version(&dv);
+            let file = fs::File::open(&path)?;
+            Ok((dv, file))
+        };
+        let (before, after) = repo
+            .neighbours(&doc)
+            .map_err(|e| NeighbourCheckError::io(e, &"Finding neighbours"))?;
+        let identical_before = before.map(open_neighbour).transpose()?;
+        let identical_after = after.map(open_neighbour).transpose()?;
+        Ok(Self {
+            doc,
+            state: if identical_before.is_none() && identical_after.is_none() {
+                DeduplicatingWriterState::Writing {
+                    file: fs::OpenOptions::new().write(true).create_new(true).open(&path)?,
+                    is_new_doc: true,
+                }
+            } else {
+                DeduplicatingWriterState::Buffering(io::Cursor::new(write_avoidance_buffer))
+            },
+            repo,
+            identical_before,
+            identical_after,
+            buffer: [0; DUPLICATE_CHECK_BUFFER_SIZE],
+        })
+    }
 
-impl TempDoc<'_> {
-    pub fn done(mut self) -> WriteResult<DocumentVersion, 2> {
+    fn really_flush(&mut self) -> io::Result<(bool, &mut fs::File)> {
         use io::Write;
 
-        self.file.flush()?;
-        // TODO check that any neighbour files have reached EOF, ohterwise set them to none
-        if let Some((before, _)) = self.identical_before {
-            fs::remove_file(self.repo.path_for_version(&self.doc))?;
-            before.with_events([None, None])
-        } else if let Some((after, _)) = self.identical_after {
-            fs::remove_file(self.repo.path_for_version(&after))?;
-            let events = [Some(DocEvent::updated(&self.doc)), Some(DocEvent::deleted(&after))];
-            self.doc.with_events(events)
-        } else {
-            let events = [
-                Some(DocEvent::updated(&self.doc)),
-                self.is_new_doc.then(|| DocEvent::created(&self.doc)),
-            ];
-            self.doc.with_events(events)
+        Ok(match self.state {
+            DeduplicatingWriterState::Writing {
+                ref mut file,
+                is_new_doc,
+            } => {
+                file.flush()?;
+                (is_new_doc, file)
+            }
+            DeduplicatingWriterState::Buffering(ref buffer) => {
+                let path = self.repo.path_for_version(&self.doc);
+                let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
+                file.write_all(buffer.get_ref())?;
+                file.flush()?;
+                self.state = DeduplicatingWriterState::Writing {
+                    file,
+                    is_new_doc: false,
+                };
+                if let DeduplicatingWriterState::Writing { file, is_new_doc: _ } = &mut self.state {
+                    (false, file)
+                } else {
+                    panic!();
+                }
+            }
+        })
+    }
+
+    pub fn done(mut self) -> WriteResult<DocumentVersion, 2> {
+        if let Some((_, file)) = &mut self.identical_before {
+            if file.read(&mut[0]).is_err() { // file is EOF, so finishes at this point too
+                self.identical_before = None;
+            }
         }
+        if let Some((_, file)) = &mut self.identical_after {
+            if file.read(&mut[0]).is_err() { // file is EOF, so finishes at this point too
+                self.identical_after = None;
+            }
+        }
+        if let Some((before, _)) = self.identical_before {
+            if let DeduplicatingWriterState::Writing { .. } = self.state {
+                fs::remove_file(self.repo.path_for_version(&self.doc))?;
+            }
+            return before.with_events([None, None]);
+        }
+        let (is_new_doc, _file) = self.really_flush()?;
+        if let Some((after, _)) = self.identical_after {
+                fs::remove_file(self.repo.path_for_version(&after))?;
+                let events = [Some(DocEvent::updated(&self.doc)), Some(DocEvent::deleted(&after))];
+                return self.doc.with_events(events)
+        }
+        let events = [
+            Some(DocEvent::updated(&self.doc)),
+            is_new_doc.then(|| DocEvent::created(&self.doc)),
+        ];
+        self.doc.with_events(events)
     }
 
     fn check_duplicate_neighbours(&mut self, buf: &[u8]) -> io::Result<()> {
-        use io::Read;
-
-        let mut comparison_buf = &mut self.buffer[..buf.len()];
+        let comparison_buf = &mut self.buffer[..buf.len()];
         if let Some((_, file)) = &mut self.identical_before {
-            match file.read_exact(&mut comparison_buf) {
+            match file.read_exact(comparison_buf) {
                 Err(e) => {
                     if e.kind() == io::ErrorKind::UnexpectedEof {
                         self.identical_before = None;
@@ -202,7 +260,7 @@ impl TempDoc<'_> {
             }
         }
         if let Some((_, file)) = &mut self.identical_after {
-            match file.read_exact(&mut comparison_buf) {
+            match file.read_exact(comparison_buf) {
                 Err(e) => {
                     if e.kind() == io::ErrorKind::UnexpectedEof {
                         self.identical_after = None;
@@ -224,9 +282,19 @@ impl TempDoc<'_> {
     }
 }
 
-impl io::Write for TempDoc<'_> {
+impl io::Write for DeduplicatingWriter<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let written = self.file.write(buf)?;
+        let written = match &mut self.state {
+            DeduplicatingWriterState::Writing { is_new_doc: _, file } => file.write(buf)?,
+            DeduplicatingWriterState::Buffering(write_avoidance_buffer) => {
+                if write_avoidance_buffer.get_ref().len() + buf.len() > WRITE_AVOIDANCE_BUFFER_LIMIT {
+                    let (_is_new_doc, file) = self.really_flush()?;
+                    file.write(buf)?
+                } else {
+                    write_avoidance_buffer.write(buf)?
+                }
+            }
+        };
         for check in buf[0..written].chunks(DUPLICATE_CHECK_BUFFER_SIZE) {
             self.check_duplicate_neighbours(check)?;
         }
@@ -234,7 +302,8 @@ impl io::Write for TempDoc<'_> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.file.flush()
+        panic!();
+        // self.file.flush()
     }
 }
 
@@ -295,7 +364,10 @@ mod test {
         };
         let mut buf = vec![];
 
-        let mut write = repo.create(url.clone(), timestamp).unwrap();
+        let mut write_avoidance_buffer = Vec::new();
+        let mut write = repo
+            .create(url.clone(), timestamp, &mut write_avoidance_buffer)
+            .unwrap();
         write.write_all(doc_content.as_bytes()).unwrap();
 
         let doc = write.done().unwrap();
@@ -339,17 +411,21 @@ mod test {
         };
         let mut buf = vec![];
 
+        let mut write_avoidance_buffer = Vec::new();
         let mut write = repo
             .create(
                 url.clone(),
                 DateTime::<FixedOffset>::from(Utc::now()) - chrono::Duration::seconds(60),
+                &mut write_avoidance_buffer,
             )
             .unwrap();
         write.write_all("old content".as_bytes()).unwrap();
         let doc = write.done().unwrap();
         repo.open(&doc).unwrap().read_to_end(&mut buf).unwrap();
 
-        let mut write = repo.create(url.clone(), timestamp).unwrap();
+        let mut write = repo
+            .create(url.clone(), timestamp, &mut write_avoidance_buffer)
+            .unwrap();
         write.write_all(doc_content.as_bytes()).unwrap();
         let doc = write.done().unwrap();
         assert_eq!(*doc, should);
@@ -392,12 +468,17 @@ mod test {
             timestamp: earlier_timestamp,
         };
 
-        let mut write = repo.create(url.clone(), earlier_timestamp).unwrap();
+        let mut write_avoidance_buffer = Vec::new();
+        let mut write = repo
+            .create(url.clone(), earlier_timestamp, &mut write_avoidance_buffer)
+            .unwrap();
         write.write_all(doc_content.as_bytes()).unwrap();
         let doc = write.done().unwrap();
         assert_eq!(*doc, should);
 
-        let mut write = repo.create(url.clone(), later_timestamp).unwrap();
+        let mut write = repo
+            .create(url.clone(), later_timestamp, &mut write_avoidance_buffer)
+            .unwrap();
         write.write_all("content".as_bytes()).unwrap();
         let doc2 = write.done().unwrap();
         assert_eq!(*doc, *doc2);
@@ -417,11 +498,16 @@ mod test {
             timestamp: earlier_timestamp,
         };
 
-        let mut write = repo.create(url.clone(), later_timestamp).unwrap();
+        let mut write_avoidance_buffer = Vec::new();
+        let mut write = repo
+            .create(url.clone(), later_timestamp, &mut write_avoidance_buffer)
+            .unwrap();
         write.write_all("content".as_bytes()).unwrap();
         let doc = write.done().unwrap();
 
-        let mut write = repo.create(url.clone(), earlier_timestamp).unwrap();
+        let mut write = repo
+            .create(url.clone(), earlier_timestamp, &mut write_avoidance_buffer)
+            .unwrap();
         write.write_all(doc_content.as_bytes()).unwrap();
         let doc2 = write.done().unwrap();
         assert_eq!(*doc2, should);
@@ -455,8 +541,15 @@ mod test {
             ("http://www.example.org/test/doc2", "2021-03-01T12:00:00+00:00", "5"),
         ];
 
+        let mut write_avoidance_buffer = Vec::new();
         for (url, timestamp, content) in docs {
-            let mut write = repo.create(url.parse().unwrap(), timestamp.parse().unwrap()).unwrap();
+            let mut write = repo
+                .create(
+                    url.parse().unwrap(),
+                    timestamp.parse().unwrap(),
+                    &mut write_avoidance_buffer,
+                )
+                .unwrap();
             write.write_all(content.as_bytes()).unwrap();
             let _ = write.done().unwrap();
         }
@@ -487,8 +580,15 @@ mod test {
             ("http://www.example.org/test/doc2", "2021-03-01T12:00:00+00:00", "5"),
         ];
 
+        let mut write_avoidance_buffer = Vec::new();
         for (url, timestamp, content) in docs {
-            let mut write = repo.create(url.parse().unwrap(), timestamp.parse().unwrap()).unwrap();
+            let mut write = repo
+                .create(
+                    url.parse().unwrap(),
+                    timestamp.parse().unwrap(),
+                    &mut write_avoidance_buffer,
+                )
+                .unwrap();
             write.write_all(content.as_bytes()).unwrap();
             let _ = write.done().unwrap();
         }

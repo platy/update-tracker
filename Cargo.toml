@@ -11,6 +11,8 @@ members = ["server"]
 [dependencies]
 chrono = { version = "0.4.19", default-features = false, features = ["std", "clock"] }
 url = "2.2.2"
+html5streams = {git = "http://github.com/platy/html5streams"}
+html5ever = "0.25.1"
 
 [dev-dependencies]
 anyhow = "1.0.44"

@@ -1,23 +1,16 @@
-use std::mem;
+use std::{io, mem};
 
-use anyhow::{format_err, Context, Result};
 use chrono::{DateTime, Utc};
 use html5ever::{
-    local_name,
-    ns,
+    local_name, ns,
     serialize::{SerializeOpts, TraversalScope},
     tendril::{StrTendril, TendrilSink},
-    Attribute,
-    ParseOpts,
+    Attribute, ParseOpts,
 };
 use html5streams::{
     css_select,
     selector::{ContextualSelector, Selector},
-    HtmlContext,
-    HtmlPathElement,
-    HtmlSerializer,
-    HtmlSink,
-    RootFilter,
+    HtmlContext, HtmlPathElement, HtmlSerializer, HtmlSink, RootFilter,
 };
 use url::Url;
 
@@ -37,13 +30,13 @@ pub enum DocContent {
 pub struct DocUpdate(DateTime<Utc>, String);
 
 impl DocContent {
-    pub fn html(html: &str, url: Option<&Url>) -> Result<Self> {
+    pub fn html(html: &mut impl io::Read, url: Option<&Url>) -> Result<Self, Box<dyn std::error::Error>> {
         let opts = SerializeOpts {
             scripting_enabled: false,
             traversal_scope: TraversalScope::IncludeNode,
             create_missing_parent: false,
         };
-        // stream is main selection -> sanitiser ( -> attachment extractor ) ( -> history selector -> history extractor ) -> serializer
+        // stream is main selection & sanitiser ( -> attachment extractor ) ( -> history selector -> history extractor ) -> serializer
         let mut buf = Vec::new();
         let mut html_serializer = HtmlSerializer::new(&mut buf, opts);
         let history_selector = css_select!((#"full-history") ("li"));
@@ -55,7 +48,7 @@ impl DocContent {
         parse_opts.tree_builder.exact_errors = true;
         let parser = html5streams::parse_document(sink, parse_opts);
 
-        let ((attachments, history), ()) = parser.one(html);
+        let ((attachments, history), ()) = parser.from_utf8().read_from(html)?.unwrap(); // TODO fail on non-utf-8 instead of ignoring and any failure here should lead to a non-html doc
 
         let attachments: Vec<Url> = if let Some(url) = url {
             attachments
@@ -71,7 +64,7 @@ impl DocContent {
         Ok(DocContent::DiffableHtml(
             String::from_utf8(buf).unwrap(),
             attachments,
-            history.into_iter().collect::<Result<_>>()?,
+            history.into_iter().collect::<Result<_, _>>()?,
         ))
     }
 
@@ -179,7 +172,7 @@ impl<InputHandle: Eq + Copy, S: HtmlSink<InputHandle>> HtmlSink<InputHandle> for
                 self.skip_handle = None
             }
         }
-        let attrs: Vec<_> = element
+        let mut attrs: Vec<_> = element
             .attrs
             .iter()
             .filter(|Attribute { name, value: _ }| !["id", "aria-labelledby", "aria-hidden"].contains(&&*name.local))
@@ -195,6 +188,7 @@ impl<InputHandle: Eq + Copy, S: HtmlSink<InputHandle>> HtmlSink<InputHandle> for
             self.skip_handle = Some(element.handle);
             return;
         }
+        attrs.sort();
         let mut element = element.clone();
         element.attrs = attrs.into();
         self.inner.append_element(context, &element)
@@ -216,6 +210,28 @@ impl<InputHandle: Eq + Copy, S: HtmlSink<InputHandle>> HtmlSink<InputHandle> for
                     }
                 }
                 self.inner.append_text(context, text)
+            } else {
+                self.main_handle = None
+            }
+        }
+    }
+
+    fn append_comment(&mut self, context: HtmlContext<InputHandle>, text: &str) {
+        if let Some(select_handle) = self.main_handle {
+            if let Some(select_index) = context
+                .iter()
+                .enumerate()
+                .find_map(|(index, elem)| (elem.handle == select_handle).then(|| index))
+            {
+                let context = &context[select_index..];
+                if let Some(skip_handle) = self.skip_handle {
+                    if context.iter().any(|elem| elem.handle == skip_handle) {
+                        return;
+                    } else {
+                        self.skip_handle = None
+                    }
+                }
+                self.inner.append_comment(context, text)
             } else {
                 self.main_handle = None
             }
@@ -261,6 +277,8 @@ impl HtmlSink<u32> for AttachmentExtractor {
 
     fn append_text(&mut self, _context: HtmlContext<u32>, _text: &str) {}
 
+    fn append_comment(&mut self, _context: HtmlContext<u32>, _text: &str) {}
+
     fn reset(&mut self) -> Self::Output {
         mem::take(&mut self.0)
     }
@@ -273,7 +291,7 @@ struct HistoryExtractor {
 }
 
 impl HtmlSink<u32> for HistoryExtractor {
-    type Output = Result<DocUpdate>;
+    type Output = Result<DocUpdate, &'static str>;
 
     fn append_doctype_to_document(
         &mut self,
@@ -294,8 +312,7 @@ impl HtmlSink<u32> for HistoryExtractor {
         if css_select!("time").context_match(context, element) {
             self.timestamp = element
                 .attr(DATETIME)
-                .context("Missing \"datetime\" property on time tag")
-                .unwrap()
+                .expect("Missing \"datetime\" property on time tag")
                 .parse()
                 .ok();
         }
@@ -309,11 +326,123 @@ impl HtmlSink<u32> for HistoryExtractor {
         }
     }
 
+    fn append_comment(&mut self, _context: HtmlContext<u32>, _text: &str) {}
+
     fn reset(&mut self) -> Self::Output {
-        let timestamp = self
-            .timestamp
-            .take()
-            .ok_or(format_err!("No timestamp found for history item"))?;
+        let timestamp = self.timestamp.take().ok_or("No timestamp found for history item")?;
         Ok(DocUpdate(timestamp, mem::take(&mut self.description)))
+    }
+}
+
+pub fn sanitise_doc(
+    reader: &mut (impl io::Read + io::Seek),
+    writer: &mut impl io::Write,
+    mut buf: &mut Vec<u8>,
+) -> io::Result<()> {
+    let mut prefix = [0; 5];
+    let is_html_main = reader.read_exact(&mut prefix).is_ok() && &prefix == b"<main";
+    reader.rewind()?;
+    if !is_html_main {
+        return io::copy(reader, writer).map(|_| ());
+    }
+
+    buf.clear();
+    let opts = SerializeOpts {
+        scripting_enabled: false,
+        traversal_scope: TraversalScope::IncludeNode,
+        create_missing_parent: false,
+    };
+    let mut html_serializer = HtmlSerializer::new(&mut buf, opts);
+    let sink = HtmlSanitizer::wrap(&mut html_serializer);
+
+    let mut parse_opts = ParseOpts::default();
+    parse_opts.tree_builder.exact_errors = true;
+    let parser = html5streams::parse_fragment(sink, parse_opts);
+
+    match parser.from_utf8().read_from(reader) {
+        Err(err) => {
+            eprintln!("Error sanitising document {}, copying instead.", err);
+            reader.rewind()?;
+            io::copy(reader, writer).map(|_| ())
+        }
+        Ok(Err(err)) => {
+            eprintln!("Parse error {}, copying instead.", err);
+            reader.rewind()?;
+            io::copy(reader, writer).map(|_| ())
+        }
+        _ if buf.is_empty() => {
+            eprintln!("Sanitisation left nothing behind, copying instead");
+            reader.rewind()?;
+            io::copy(reader, writer).map(|_| ())
+        }
+        _ => writer.write_all(&buf[..]),
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::io;
+
+    use super::{sanitise_doc, DocContent};
+
+    fn doc_html() -> io::Cursor<&'static str> {
+        io::Cursor::new(include_str!("../../tests/govuk/register-to-vote"))
+    }
+
+    #[test]
+    fn sanitise_non_utf8() {
+        let mut buf = Vec::new();
+        let mut sanitised = Vec::new();
+        sanitise_doc(&mut io::Cursor::new([255u8, 0]), &mut sanitised, &mut buf).unwrap();
+        assert_eq!(sanitised, vec![255, 0]);
+    }
+
+    #[test]
+    fn sanitise_non_html() {
+        let mut buf = Vec::new();
+        let mut sanitised = Vec::new();
+        sanitise_doc(&mut io::Cursor::new("some text"), &mut sanitised, &mut buf).unwrap();
+        assert_eq!(sanitised, "some text".as_bytes());
+    }
+
+    #[test]
+    fn sanitize_html_equality() {
+        let mut buf = Vec::new();
+        let mut a = Vec::new();
+        let mut b = Vec::new();
+        assert_ne!(
+            include_str!("../../tests/govuk/find-travel-test-provider1"),
+            include_str!("../../tests/govuk/find-travel-test-provider2")
+        );
+        sanitise_doc(
+            &mut io::Cursor::new(include_str!("../../tests/govuk/find-travel-test-provider1")),
+            &mut a,
+            &mut buf,
+        )
+        .unwrap();
+        sanitise_doc(
+            &mut io::Cursor::new(include_str!("../../tests/govuk/find-travel-test-provider2")),
+            &mut b,
+            &mut buf,
+        )
+        .unwrap();
+        assert_eq!(std::str::from_utf8(&a), std::str::from_utf8(&b));
+        assert_eq!(a.len(), 4694);
+    }
+
+    #[test]
+    fn html_equality() {
+        fn doc() -> DocContent {
+            DocContent::html(
+                &mut doc_html(),
+                Some(&"https://www.gov.uk/register-to-vote".parse().unwrap()),
+            )
+            .unwrap()
+        }
+        let a = doc();
+        let b = doc();
+        assert_eq!(a, b);
+        assert_eq!(a.as_bytes().len(), 7660);
+        assert_eq!(a.attachments(), Some(&[][..]));
     }
 }

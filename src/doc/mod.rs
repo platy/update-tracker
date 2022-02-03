@@ -3,6 +3,7 @@ use std::fmt;
 use crate::{repository::Entity, Url};
 use chrono::{DateTime, FixedOffset};
 
+pub mod content;
 mod repository;
 pub use repository::DocRepo;
 

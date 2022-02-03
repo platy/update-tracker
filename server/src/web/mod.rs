@@ -275,7 +275,7 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
                 update.url().host_str().unwrap_or_default(),
                 update.url().path(),
                 update.url().path(),
-                update.timestamp().time().to_string(),
+                update.timestamp().time(),
                 update.change(),
                 tags = self
                     .data

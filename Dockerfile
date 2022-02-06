@@ -14,7 +14,7 @@ COPY . /app
 RUN cargo build --release -p update-tracker
 
 # We do not need the Rust toolchain to run the binary!
-FROM debian:buster-slim AS runtime
+FROM debian:bullseye-slim AS runtime
 RUN apt-get update && apt-get install -y openssl git && rm -rf /var/lib/apt/lists/*
 ENV LISTEN_ADDR 0.0.0.0:80
 WORKDIR /app/server

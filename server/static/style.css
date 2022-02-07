@@ -219,9 +219,25 @@ html {
 }
 
 body {
-    display: -webkit-box;
-    display: -ms-flexbox;
-    display: flex
+    display: flex;
+    flex-wrap: wrap;
+    align-content: center;
+}
+
+.update-main {
+    flex: 40rem 2;
+    width: 40rem;
+}
+
+.update-main img {
+    width: -moz-available;
+    width: -webkit-fill-available;
+    width: fill-available;
+    max-width: max-content;
+}
+
+.update-side {
+    flex: 16rem 2;
 }
 
 a {
@@ -272,13 +288,10 @@ ul[data-diff-node]:after {
     top: -10px
 }
 
-section {
+section.column {
     display: -webkit-box;
     display: -ms-flexbox;
     display: flex;
-    -webkit-box-orient: vertical;
-    -webkit-box-direction: normal;
-    -ms-flex-direction: column;
     flex-direction: column
 }
 
@@ -294,40 +307,19 @@ section {
     height: 17px;
     overflow: hidden;
     text-indent: -999em;
-    background: url(https://assets.publishing.service.gov.uk/static/images/open-government-licence-c1aedc8257961b938b4c7a21a2b0db3f2716dd9ef782cea73110dc69107c9042.png) 0 0 no-repeat
+    background: url(https://www.nationalarchives.gov.uk/images/infoman/ogl-symbol-41px-black.png) 0 0 no-repeat
 }
 
 .commit-log a {
-    -webkit-text-decoration-line: none;
     text-decoration-line: none
 }
 
-.commit-log a li {
-    -webkit-text-decoration-line: underline;
-    text-decoration-line: underline
-}
-
-.commit-log li.added:before {
-    content: "A";
-    color: green
-}
-
-.commit-log li.modified:before {
-    content: "M";
-    color: #daa520
-}
-
-.commit-log>:nth-child(2n) {
+.commit-log>a:nth-of-type(6n+1), .commit-log>a:nth-of-type(6n+2), .commit-log>a:nth-of-type(6n+3) {
     background-color: #ffffe0
 }
 
 .updates .commit-log {
-    display: -webkit-box;
-    display: -ms-flexbox;
     display: flex;
-    -webkit-box-orient: vertical;
-    -webkit-box-direction: normal;
-    -ms-flex-direction: column;
     flex-direction: column;
     padding: 0
 }
@@ -336,25 +328,16 @@ section {
     display: none
 }
 
-.commit-log ul li:before {
-    padding-right: 10px
-}
-
 .commit-log>* {
-    display: block
+    display: block;
+    padding: 5px 10px;
 }
 
-.commit-log ul {
-    padding: 5px 10px
-}
-
-.commit-log p {
-    padding: 5px 33px
-}
-
-.commit-log .day-header {
-    margin: 0;
-    padding: 15px
+.update-description {
+    padding: 0px 23px;
+    text-overflow: ellipsis;
+    text-indent: -39px;
+    padding-left: 62px;
 }
 
 .diff [data-diff-node=del],
@@ -373,34 +356,21 @@ section {
     text-decoration-line: none
 }
 
-@media screen and (min-width:900px) {
-    .commit-log .table-header {
-        display: table-row
-    }
-    .commit-log .table-header * {
-        display: table-cell
-    }
+@media screen and (min-width:800px) {
     .updates .commit-log {
-        display: table;
-        table-layout: fixed
+        display: grid;
+        grid-template-columns: 3fr 2fr;
+        /* table-layout: fixed */
     }
-    .commit-log>* {
-        display: table-row
+    .commit-log .table-header {
+        display: block;
+        font-weight: bold;
     }
-    .commit-log p,
-    .commit-log ul {
-        display: table-cell
+    .commit-log .date-seperator {
+        grid-column: 1/4;
     }
-    .commit-log ul li {
-        width: 400px;
-        display: -webkit-box;
-        display: -ms-flexbox;
-        display: flex
-    }
-    .commit-log p {
-        text-overflow: ellipsis;
-        text-indent: -55px;
-        padding-left: 55px;
+    .date-seperator {
+        margin: 0;
     }
 }
 
@@ -415,7 +385,7 @@ section {
     .commit-info {
         background-color: #6200ea
     }
-    .commit-log>:nth-child(2n) {
+    .commit-log>a:nth-of-type(6n+1), .commit-log>a:nth-of-type(6n+2), .commit-log>a:nth-of-type(6n+3) {
         background-color: #424242
     }
     .diff [data-diff-node=del],
@@ -425,5 +395,8 @@ section {
     .diff [data-diff-node=ins],
     .diff ins {
         background-color: #1b5e20
+    }
+    .open-government-licence .logo a {
+        background: url(https://www.nationalarchives.gov.uk/images/infoman/ogl-symbol-41px-retina-white.png) 0 0 no-repeat
     }
 }

@@ -183,7 +183,7 @@ impl<'a> UpdateEmailProcessor<'a> {
         git_transaction: &mut GitRepoTransaction,
     ) -> Result<()> {
         if let Err(err) = self.new.write_update(url, updated_at, change, category.as_deref()) {
-            println!("Error writign to update repo {}", err);
+            println!("Error writing to update repo {}", err);
         }
 
         let mut commit_builder = git_transaction.start_change()?;
@@ -196,7 +196,7 @@ impl<'a> UpdateEmailProcessor<'a> {
             let ts = Utc::now();
             let ts = ts.with_timezone(&ts.offset().fix());
             if let Err(err) = self.new.write_doc(url, ts, &content) {
-                println!("Error writign to doc repo {}", err)
+                println!("Error writing to doc repo {}", err)
             }
 
             let mut path = path;
@@ -223,7 +223,11 @@ impl FetchDocs {
     }
 
     fn fetch_doc(&mut self, url: Url) -> Result<Option<(PathBuf, DocContent)>> {
-        if let Some(doc) = retrieve_doc(&url)? {
+        if let Some(doc) = retrieve_doc(&url).or_else(|err| {
+            println!("Request for {} failed with {}, waiting {:?} once and retrying", &url, err, RETRY_DELAY);
+            thread::sleep(RETRY_DELAY);
+            retrieve_doc(&url)
+        })? {
             self.urls
                 .extend(doc.content.attachments().unwrap_or_default().iter().cloned());
             let path = PathBuf::from(doc.url.path());
@@ -234,6 +238,8 @@ impl FetchDocs {
         }
     }
 }
+
+const RETRY_DELAY: Duration = Duration::from_secs(60);
 
 impl Iterator for FetchDocs {
     type Item = Result<(PathBuf, DocContent)>;

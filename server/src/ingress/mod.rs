@@ -136,10 +136,14 @@ impl<'a> UpdateEmailProcessor<'a> {
     fn process_email_update_file(&mut self, to_dir_name: impl AsRef<Path>, dir_entry: &fs::DirEntry) -> Result<bool> {
         let working_path = self.work_dir.join(&to_dir_name).join(dir_entry.file_name());
         fs::create_dir_all(working_path.parent().unwrap()).context("Creating working dir")?;
-        fs::rename(dir_entry.path(), &working_path).context(format!(
-            "Renaming file {} to {}",
+        fs::copy(dir_entry.path(), &working_path).context(format!(
+            "Copying file {} to {}",
             dir_entry.path().to_str().unwrap_or_default(),
             &working_path.to_str().unwrap_or_default()
+        ))?;
+        fs::remove_file(dir_entry.path()).context(format!(
+            "Removing file {}",
+            dir_entry.path().to_str().unwrap_or_default()
         ))?;
         let data = {
             let mut lock = FileLock::lock(working_path.to_str().context("error")?, true, false)

@@ -30,6 +30,7 @@ stdenv.mkDerivation {
   export KUBECONFIG=$HOME/kubeconfig-k3.yaml
   # export CONTAINERS_HELPER_BINARY_DIR=${gvproxy}/bin
   alias k8=kubectl
+  alias k8a="kubectl -lapp=update-tracker"
   alias prod-logs="kubectl logs -lapp=update-tracker -c update-tracker"
   alias prod-email-logs="kubectl logs -lapp=update-tracker -c smtp-dump"
   alias podman-start="CONTAINERS_CONF=containers.conf podman machine start"

@@ -97,7 +97,7 @@ spec:
           - name: TEMP_DIR
             value: /mail/tmp
       - name: update-tracker
-        image: rg.nl-ams.scw.cloud/njkonl/update-tracker:0.2.1
+        image: rg.nl-ams.scw.cloud/njkonl/update-tracker:0.2.2
         resources:
           limits:
             memory: "256Mi"
@@ -120,8 +120,6 @@ spec:
         env:
           - name: INBOX
             value: /mail/inbox/mail.notifications.service.gov.uk
-          - name: OUTBOX
-            value: /mail/outbox/mail.notifications.service.gov.uk
           - name: NEW_REPO
             value: /updates/repo
           - name: GIT_REPO

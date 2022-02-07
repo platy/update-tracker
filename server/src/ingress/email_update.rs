@@ -2,7 +2,7 @@ use anyhow::{bail, ensure, Context, Result};
 use scraper::{html, ElementRef, Html, Selector};
 use url::Url;
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq)]
 pub struct GovUkChange {
     pub change: String,
     pub updated_at: String,
@@ -58,6 +58,12 @@ impl GovUkChange {
             updated_at,
             category: None,
         })
+    }
+}
+
+impl std::fmt::Debug for GovUkChange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GovUkChange").field("change", &self.change).field("updated_at", &self.updated_at).field("url", &self.url.as_str()).field("category", &self.category).finish()
     }
 }
 

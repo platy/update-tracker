@@ -35,6 +35,17 @@ stdenv.mkDerivation {
   alias prod-email-logs="kubectl logs -lapp=update-tracker -c smtp-dump"
   alias podman-start="CONTAINERS_CONF=containers.conf podman machine start"
   alias prod-deploy="kubectl apply -f deploy.yaml && kubectl rollout status deployment update-tracker"
+  ssh_setup() {
+    echo "Starting ssh server"
+    k8 apply -f sync.yaml
+    k8 port-forward pod/sshd 2222:22 &
+  }
+  alias ssh_connect="ssh root@localhost -p 2222"
+  ssh_teardown() {
+    echo "Stopping sshd, removing temp ssh ids"
+    k8 delete -f sync.yaml
+    sed '/\[localhost\]:2222/d' -i ~/.ssh/known_hosts
+  }
   '';
 }
 

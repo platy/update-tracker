@@ -63,7 +63,12 @@ impl GovUkChange {
 
 impl std::fmt::Debug for GovUkChange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GovUkChange").field("change", &self.change).field("updated_at", &self.updated_at).field("url", &self.url.as_str()).field("category", &self.category).finish()
+        f.debug_struct("GovUkChange")
+            .field("change", &self.change)
+            .field("updated_at", &self.updated_at)
+            .field("url", &self.url.as_str())
+            .field("category", &self.category)
+            .finish()
     }
 }
 

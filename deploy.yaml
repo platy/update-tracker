@@ -97,7 +97,7 @@ spec:
           - name: TEMP_DIR
             value: /mail/tmp
       - name: update-tracker
-        image: rg.nl-ams.scw.cloud/njkonl/update-tracker:0.2.4
+        image: rg.nl-ams.scw.cloud/njkonl/update-tracker:0.2.5
         resources:
           limits:
             memory: "256Mi"

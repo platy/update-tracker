@@ -7,7 +7,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use chrono::{DateTime, FixedOffset, format::StrftimeItems};
+use chrono::{format::StrftimeItems, DateTime, FixedOffset};
 use rouille::{find_route, Request, Response};
 use update_repo::{doc::DocumentVersion, tag::Tag, update::Update, Url};
 
@@ -259,7 +259,9 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
                 writeln!(f, r#"<h3 class="date-seperator">{}</h3>"#, update_date.naive_local()).unwrap();
             }
             let mut update_path = update.timestamp().to_rfc3339();
-            write!(&mut update_path, "/{}{}",
+            write!(
+                &mut update_path,
+                "/{}{}",
                 update.url().host_str().unwrap_or_default(),
                 update.url().path(),
             )?;
@@ -276,13 +278,8 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
                 update.timestamp().time().format_with_items(StrftimeItems::new("%H:%M")),
                 update.change(),
             )?;
-            writeln!(
-                f,
-                r#"<a href="/update/{}" class="update-tags">"#,
-            &update_path)?;
-            for tag in self
-                    .data
-                    .get_tags(update.update_ref()) {
+            writeln!(f, r#"<a href="/update/{}" class="update-tags">"#, &update_path)?;
+            for tag in self.data.get_tags(update.update_ref()) {
                 writeln!(f, "<div>{}</div>", tag.name())?;
             }
             writeln!(f, r#"</a>"#)?;
@@ -294,9 +291,7 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
         <div>"
         )?;
         self.page.into_writer(f)?;
-        writeln!(
-            f,
-            "</div>")?;
+        writeln!(f, "</div>")?;
         Ok(())
     }
 }

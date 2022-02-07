@@ -224,7 +224,10 @@ impl FetchDocs {
 
     fn fetch_doc(&mut self, url: Url) -> Result<Option<(PathBuf, DocContent)>> {
         if let Some(doc) = retrieve_doc(&url).or_else(|err| {
-            println!("Request for {} failed with {}, waiting {:?} once and retrying", &url, err, RETRY_DELAY);
+            println!(
+                "Request for {} failed with {}, waiting {:?} once and retrying",
+                &url, err, RETRY_DELAY
+            );
             thread::sleep(RETRY_DELAY);
             retrieve_doc(&url)
         })? {

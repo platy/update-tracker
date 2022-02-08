@@ -34,7 +34,7 @@ pub fn listen(addr: &str, data: Arc<RwLock<Data>>) {
             handle_doc_diff_page(request, &data.read().unwrap())
         );
         eprintln!(
-            "Request {ts} {method} {url} -> {status_code} > {remote_ip}",
+            "Request {ts} {method} {url} -> {status_code} > {remote_ip} {user_agent:?}",
             ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             method = request.method(),
             url = request.url(),
@@ -43,6 +43,7 @@ pub fn listen(addr: &str, data: Arc<RwLock<Data>>) {
                 .header("X-Forwarded-For")
                 .map(Cow::from)
                 .unwrap_or_else(|| request.remote_addr().ip().to_string().into()),
+            user_agent = request.header("User-Agent").unwrap_or_default(),
         );
         response
     });

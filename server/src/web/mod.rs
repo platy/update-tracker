@@ -37,12 +37,12 @@ pub fn listen(addr: &str, data: Arc<RwLock<Data>>) {
             "Request {ts} {method} {url} -> {status_code} > {remote_ip}",
             ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             method = request.method(),
-            url = request
+            url = request.url(),
+            status_code = response.status_code,
+            remote_ip = request
                 .header("X-Forwarded-For")
                 .map(Cow::from)
-                .unwrap_or_else(|| request.url().into()),
-            remote_ip = request.remote_addr().ip(),
-            status_code = response.status_code
+                .unwrap_or_else(|| request.remote_addr().ip().to_string().into()),
         );
         response
     });

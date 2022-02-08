@@ -9,6 +9,7 @@ cargo clippy
 VERSION=$(sed --quiet 's/^version = "\(.*\)"/\1/p' server/Cargo.toml)
 TAG="rg.nl-ams.scw.cloud/njkonl/update-tracker:$VERSION"
 # make sure that this tag hasn't already been built
+CONTAINERS_CONF=containers.conf podman machine start || true
 if $(podman image exists $TAG); then echo "Tag for $VERSION already built"; exit 1; fi
 # check git clean
 if [[ -n $(git status --porcelain=v2 2> /dev/null | grep \\.M) ]]; then
@@ -19,7 +20,6 @@ fi
 sed -i "s|rg.nl-ams.scw.cloud/njkonl/update-tracker:\(.*\)$|$TAG|" deploy.yaml
 git add deploy.yaml
 # docker build & tag
-CONTAINERS_CONF=containers.conf podman machine start || true
 podman build -t $TAG .
 
 # git commit

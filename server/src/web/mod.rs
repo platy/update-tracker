@@ -26,13 +26,22 @@ pub fn listen(addr: &str, data: Arc<RwLock<Data>>) {
     println!("Listen on http://{}", addr);
 
     rouille::start_server_with_pool(addr, None, move |request| {
-        find_route!(
+        let response = find_route!(
             rouille::match_assets(request, "./static"),
             handle_root(request),
             handle_updates(request, &data.read().unwrap()),
             handle_update(request, &data.read().unwrap()),
             handle_doc_diff_page(request, &data.read().unwrap())
-        )
+        );
+        eprintln!(
+            "Request {ts} {method} {url} -> {status_code} > {remote_ip}",
+            ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            method = request.method(),
+            url = request.url(),
+            remote_ip = request.remote_addr().ip(),
+            status_code = response.status_code
+        );
+        response
     });
 }
 

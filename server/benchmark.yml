@@ -1,0 +1,15 @@
+---
+
+concurrency: 4
+base: 'http://127.0.0.1:8080'
+iterations: 100
+rampup: 2
+
+plan:
+  - name: Fetch updates
+    request:
+      url: /updates
+
+  - name: Fetch update
+    request:
+      url: /update/2022-01-27T06:43:00+00:00/www.gov.uk/guidance/working-safely-during-covid-19

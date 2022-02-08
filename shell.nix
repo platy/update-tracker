@@ -34,6 +34,7 @@ stdenv.mkDerivation {
   alias prod-logs="kubectl logs -lapp=update-tracker -c update-tracker"
   alias prod-email-logs="kubectl logs -lapp=update-tracker -c smtp-dump"
   alias podman-start="CONTAINERS_CONF=containers.conf podman machine start"
+  alias podman-stop="CONTAINERS_CONF=containers.conf podman machine stop"
   alias prod-deploy="kubectl apply -f deploy.yaml && kubectl rollout status deployment update-tracker"
   ssh_setup() {
     echo "Starting ssh server"

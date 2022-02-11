@@ -314,7 +314,8 @@ section.column {
     text-decoration-line: none
 }
 
-.commit-log>a:nth-of-type(6n+1), .commit-log>a:nth-of-type(6n+2), .commit-log>a:nth-of-type(6n+3) {
+.updates .commit-log>a:nth-of-type(6n+1), .updates .commit-log>a:nth-of-type(6n+2), .updates .commit-log>a:nth-of-type(6n+3),
+.update-side.commit-log>a:nth-of-type(2n+1) {
     background-color: #ffffe0
 }
 
@@ -385,8 +386,9 @@ section.column {
     .commit-info {
         background-color: #6200ea
     }
-    .commit-log>a:nth-of-type(6n+1), .commit-log>a:nth-of-type(6n+2), .commit-log>a:nth-of-type(6n+3) {
-        background-color: #424242
+    .updates .commit-log>a:nth-of-type(6n+1), .updates .commit-log>a:nth-of-type(6n+2), .updates .commit-log>a:nth-of-type(6n+3),
+    .update-side.commit-log>a:nth-of-type(2n+1) {
+        background-color: #424242;
     }
     .diff [data-diff-node=del],
     .diff del {

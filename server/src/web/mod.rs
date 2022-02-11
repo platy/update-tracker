@@ -94,12 +94,13 @@ route! {
             orig_url = &*url,
             timestamp = update.timestamp().naive_local(),
             change = update.change(),
+            tags = data.get_tags(update.update_ref()).iter().map(|u| u.name()).collect::<String>(),
             diff_url = diff_url,
             doc_from = from_ts.map_or(String::new(), |v| v.to_string()),
             doc_to = to_ts.map_or(String::new(), |v| v.to_string()),
             body = body,
             history = updates.iter().rev().map(|(_, (update, _tags))| {
-                format!(r#"<a href="/update/{}/{}{}"><p>{}<br />{}</p></a>"#, update.timestamp().to_rfc3339(), update.url().host_str().unwrap(), update.url().path(), update.timestamp().naive_local(), update.change())
+                format!(r#"<a href="/update/{}/{}{}"><p class="update-description">{}<br />{}</p></a>"#, update.timestamp().to_rfc3339(), update.url().host_str().unwrap(), update.url().path(), update.timestamp().format("%F %H:%M"), update.change())
             }).collect::<String>()
         ))
         .with_etag(

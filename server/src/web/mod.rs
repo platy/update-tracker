@@ -1,10 +1,12 @@
 use std::{
     borrow::{Borrow, Cow},
+    env,
     fmt::{self, Write},
     mem,
     ops::Deref,
     str::FromStr,
     sync::{Arc, RwLock},
+    time::Instant,
 };
 
 use chrono::{format::StrftimeItems, DateTime, FixedOffset};
@@ -26,6 +28,7 @@ pub fn listen(addr: &str, data: Arc<RwLock<Data>>) {
     println!("Listen on http://{}", addr);
 
     rouille::start_server_with_pool(addr, None, move |request| {
+        let start = Instant::now();
         let response = find_route!(
             rouille::match_assets(request, "./static"),
             handle_root(request),
@@ -34,7 +37,7 @@ pub fn listen(addr: &str, data: Arc<RwLock<Data>>) {
             handle_doc_diff_page(request, &data.read().unwrap())
         );
         eprintln!(
-            "Request {ts} {method} {url} -> {status_code} > {remote_ip} {user_agent:?}",
+            "> {ts} {remote_ip:15} < {status_code:3} ({took:3.0}ms) <- {method:4} {url} ({user_agent:?})",
             ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             method = request.method(),
             url = request.url(),
@@ -44,6 +47,7 @@ pub fn listen(addr: &str, data: Arc<RwLock<Data>>) {
                 .map(Cow::from)
                 .unwrap_or_else(|| request.remote_addr().ip().to_string().into()),
             user_agent = request.header("User-Agent").unwrap_or_default(),
+            took = Instant::now().duration_since(start).as_millis(),
         );
         response
     });
@@ -177,17 +181,42 @@ fn diff_fields(
         url.host().unwrap(),
     );
 
-    let current_doc_body = to.map(|doc| data.read_doc_to_string(doc).with_base_url(&diff_base));
-    let previous_doc_body = from.map(|doc| data.read_doc_to_string(doc).with_base_url(&diff_base));
-
     (
         format!("{}{}", diff_base, url.path()),
         from.map(DocumentVersion::timestamp).copied(),
         to.map(DocumentVersion::timestamp).copied(),
-        match (previous_doc_body, current_doc_body) {
-            (Some(previous_doc_body), Some(current_doc_body)) => previous_doc_body.diff(&current_doc_body),
-            (Some(previous_doc_body), None) => previous_doc_body.into_inner(),
-            (None, Some(current_doc_body)) => current_doc_body.into_inner(),
+        match (from, to) {
+            (Some(from), Some(to)) => {
+                let cache = env::var("DIFFCACHE").ok();
+                let cached_diff = if let Some(cache) = &cache.as_deref() {
+                    match cacache::read_sync(cache, &diff_base) {
+                        Ok(from_cache) => String::from_utf8(from_cache).ok(),
+                        Err(err) => {
+                            println!("Error reading from cache : {:?}", err);
+                            if let Err(err) = cacache::remove_sync(cache, &diff_base) {
+                                println!("Error removing from cache : {:?}", err);
+                            }
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+                cached_diff.unwrap_or_else(|| {
+                    let diff = data
+                        .read_doc_to_string(from)
+                        .with_base_url(&diff_base)
+                        .diff(&data.read_doc_to_string(to).with_base_url(&diff_base));
+                    if let Some(cache) = &cache {
+                        if let Err(err) = cacache::write_sync(cache, &diff_base, &diff) {
+                            println!("Error writing to cache : {:?}", err);
+                        }
+                    }
+                    diff
+                })
+            }
+            (Some(from), None) => data.read_doc_to_string(from).with_base_url(&diff_base).into_inner(),
+            (None, Some(to)) => data.read_doc_to_string(to).with_base_url(&diff_base).into_inner(),
             _ => "No versions recorded for this update".to_owned(),
         },
     )

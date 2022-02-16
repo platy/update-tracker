@@ -31,11 +31,16 @@ fn main() {
     thread::spawn(move || {
         let profiler = dhat::Profiler::builder().file_name("dhat-heap-drill.json").build();
         println!("Profiling dhat allocations");
-        std::process::Command::new("drill").args(["--benchmark", "benchmark.yaml", "--stats"]).spawn().unwrap().wait().unwrap();
+        std::process::Command::new("drill")
+            .args(["--benchmark", "benchmark.yaml", "--stats"])
+            .spawn()
+            .unwrap()
+            .wait()
+            .unwrap();
         println!("Exiting to write dhat allocations");
         drop(profiler);
         std::process::exit(0);
     });
-    
+
     web::listen(dotenv::var("LISTEN_ADDR").as_deref().unwrap_or("127.0.0.1:8080"), data);
 }

@@ -37,11 +37,10 @@ impl DocContent {
             create_missing_parent: false,
         };
         // stream is main selection & sanitiser ( -> attachment extractor ) ( -> history selector -> history extractor ) -> serializer
+        let attachment_extractor = AttachmentExtractor::default();
+        let history_extractor = RootFilter::<_, _, _, Vec<_>>::wrap(HistoryExtractor::default(), css_select!((#"full-history") ("li")));
         let mut buf = Vec::new();
         let mut html_serializer = HtmlSerializer::new(&mut buf, opts);
-        let history_selector = css_select!((#"full-history") ("li"));
-        let history_extractor = RootFilter::<_, _, _, Vec<_>>::wrap(HistoryExtractor::default(), history_selector);
-        let attachment_extractor = AttachmentExtractor::default();
         let sink = HtmlSanitizer::wrap(((attachment_extractor, history_extractor), &mut html_serializer));
 
         let mut parse_opts = ParseOpts::default();
@@ -50,15 +49,14 @@ impl DocContent {
 
         let ((attachments, history), ()) = parser.from_utf8().read_from(html)?.unwrap(); // TODO fail on non-utf-8 instead of ignoring and any failure here should lead to a non-html doc
 
+        let attachments = attachments.into_iter();
         let attachments: Vec<Url> = if let Some(url) = url {
             attachments
-                .into_iter()
                 .map(|attachment_url| url.join(&*attachment_url))
                 .filter(|attachment_url| attachment_url.as_ref() != Ok(url))
                 .collect::<Result<_, _>>()?
         } else {
             attachments
-                .into_iter()
                 .map(|attachment_url| attachment_url.parse())
                 .collect::<Result<_, _>>()?
         };

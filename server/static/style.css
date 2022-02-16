@@ -358,9 +358,7 @@ section.column {
 }
 
 .gem-c-share-links__link-icon {
-    position: absolute;
-    top: 0;
-    left: 0;
+    display: inline-block;
     width: 30px;
     height: 30px;
     line-height: 30px;

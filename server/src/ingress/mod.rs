@@ -264,7 +264,10 @@ impl Iterator for FetchDocs {
 
 pub fn retrieve_doc(url: &Url) -> Result<Option<Doc>> {
     println!("retrieving url : {}", url);
-    let response = match get(url.as_str()).call() {
+    let response = match get(url.as_str())
+        .set("User-Agent", "GovDiffBot/0.1; +https://govdiff.njk.onl")
+        .call()
+    {
         Ok(response) => response,
         Err(ureq::Error::Status(410, _)) => return Ok(None), /* other responses could indicate that a retry should happen or that we have a programming issue, but 410 really means that we're requesting the intended document but it has been intentionally removed */
         err => err.context("Error retrieving")?,

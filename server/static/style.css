@@ -357,6 +357,15 @@ section.column {
     text-decoration-line: none
 }
 
+.gem-c-share-links__link-icon {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 30px;
+    height: 30px;
+    line-height: 30px;
+  }
+
 @media screen and (min-width:800px) {
     .updates .commit-log {
         display: grid;

@@ -191,6 +191,7 @@ fn diff_fields(
                 let cached_diff = if let Some(cache) = &cache.as_deref() {
                     match cacache::read_sync(cache, &diff_base) {
                         Ok(from_cache) => String::from_utf8(from_cache).ok(),
+                        Err(cacache::Error::EntryNotFound(_, _)) => None,
                         Err(err) => {
                             println!("Error reading from cache : {:?}", err);
                             if let Err(err) = cacache::remove_sync(cache, &diff_base) {

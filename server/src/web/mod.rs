@@ -107,6 +107,7 @@ route! {
                 format!(r#"<a href="/update/{}/{}{}"><p class="update-description">{}<br />{}</p></a>"#, update.timestamp().to_rfc3339(), update.url().host_str().unwrap(), update.url().path(), update.timestamp().format("%F %H:%M"), update.change())
             }).collect::<String>()
         ))
+        .with_status_code(if from_ts.is_none() && to_ts.is_none() { 404 } else { 200 })
         .with_etag(
             request,
             format!("{} {}", previous_doc.is_some(), current_doc.is_some()),
@@ -134,6 +135,7 @@ route! {
             doc_to = to_ts.map_or(String::new(), |v| v.to_string()),
             body = body,
         ))
+        .with_status_code(if from_ts.is_none() && to_ts.is_none() { 404 } else { 200 })
         .with_etag(request, format!("{} {}", from_doc.is_some(), to_doc.is_some())))
     }
 }

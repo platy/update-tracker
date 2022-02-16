@@ -1,0 +1,4 @@
+User-agent: *
+# the diffs can be generated for any pair of timestamps for each valid url, so although some are interesting, most are duplicates or invalid
+Disallow: /diff/
+Crawl-delay: 10

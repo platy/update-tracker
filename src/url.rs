@@ -105,7 +105,7 @@ impl UrlRepo {
 
     pub fn read_dir_sorted_for_url(&self, url: &Url) -> io::Result<vec::IntoIter<fs::DirEntry>> {
         let mut dir = fs::read_dir(url.to_path(self.base()))?.collect::<io::Result<Vec<_>>>()?;
-        dir.sort_by_key(fs::DirEntry::file_name);
+        dir.sort_by_cached_key(fs::DirEntry::file_name);
         Ok(dir.into_iter())
     }
 

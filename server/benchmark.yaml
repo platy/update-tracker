@@ -13,3 +13,7 @@ plan:
   - name: Fetch update
     request:
       url: /update/2022-01-27T06:43:00+00:00/www.gov.uk/guidance/working-safely-during-covid-19
+
+  - name: Fetch living in germany update
+    request:
+      url: /update/2021-02-26T14:00:00+00:00/www.gov.uk/guidance/living-in-germany

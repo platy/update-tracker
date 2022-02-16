@@ -25,6 +25,9 @@ stdenv.mkDerivation {
 
     # for k8s mgmt
     kubectl
+
+    # for dev and load test
+    drill
   ];
   shellHook = ''
   export KUBECONFIG=$HOME/kubeconfig-k3.yaml

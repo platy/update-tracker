@@ -24,6 +24,11 @@ dotenv = "0.15.0"
 file-locker = "1"
 chrono-tz = "0.6.0"
 
+dhat = { version = "0.3", optional = true }
+
 [dev-dependencies]
 html-diff = "0.0.6"
 pretty_assertions = "1.0.0"
+
+[features]
+dhat-heap = ["dhat"]

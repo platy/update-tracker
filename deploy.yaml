@@ -97,7 +97,7 @@ spec:
           - name: TEMP_DIR
             value: /mail/tmp
       - name: update-tracker
-        image: rg.nl-ams.scw.cloud/njkonl/update-tracker:0.2.11
+        image: rg.nl-ams.scw.cloud/njkonl/update-tracker:0.2.12
         resources:
           limits:
             memory: "256Mi"
@@ -124,6 +124,8 @@ spec:
             value: /updates/repo
           - name: GIT_REPO
             value: /gitgovuk/repo
+          - name: DIFFCACHE
+            value: /updates/diffcache
       imagePullSecrets:
       - name: regcred
       volumes:

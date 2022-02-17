@@ -152,7 +152,13 @@ impl<'a> UpdateEmailProcessor<'a> {
             lock.file.read_to_end(&mut bytes).context("Reading email file")?;
             bytes
         };
-        let updates = GovUkChange::from_eml(&String::from_utf8(data)?).context("Parsing email")?;
+        let updates = match GovUkChange::from_eml(&String::from_utf8(data)?) {
+            Ok(updates) => updates,
+            Err(err) => {
+                eprintln!("Error parsing email: {:?}", &err);
+                return Ok(false);
+            }
+        };
         let mut git_transaction = self.git.start_transaction()?;
         for change in &updates {
             if let Err(err) = self.handle_change(change, &mut git_transaction) {

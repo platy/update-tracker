@@ -38,7 +38,8 @@ impl DocContent {
         };
         // stream is main selection & sanitiser ( -> attachment extractor ) ( -> history selector -> history extractor ) -> serializer
         let attachment_extractor = AttachmentExtractor::default();
-        let history_extractor = RootFilter::<_, _, _, Vec<_>>::wrap(HistoryExtractor::default(), css_select!((#"full-history") ("li")));
+        let history_extractor =
+            RootFilter::<_, _, _, Vec<_>>::wrap(HistoryExtractor::default(), css_select!((#"full-history") ("li")));
         let mut buf = Vec::new();
         let mut html_serializer = HtmlSerializer::new(&mut buf, opts);
         let sink = HtmlSanitizer::wrap(((attachment_extractor, history_extractor), &mut html_serializer));

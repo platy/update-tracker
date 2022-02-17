@@ -1,21 +1,5 @@
-DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/simple;
-	s=nxtbmcnibyvdpgybfefagukl3mg67kiw; d=notifications.service.gov.uk;
-	t=1611394083;
-	h=From:Reply-To:To:Subject:MIME-Version:Content-Type:Message-ID:Date;
-	bh=VyFFRjQ2dqfVqRw7/HLLf++F2+mhPsxrgGJdyZ84dWk=;
-	b=hyDRu1r8EOi83gWMz/z+fkBCCorNiE1zftwqCgmlO9CALSruDcBUAl5yqIky3Y9D
-	LpetTPxtUOoey74ngdI0bXoausZVo2lIUsApEI481DELmQBzf+qzKGAhzF2nA/OnAlE
-	kTvxFnX3nNf2nRQdoYgtuzmm5nmzPgPL2ekUkArU=
-DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/simple;
-	s=shh3fegwg5fppqsuzphvschd53n6ihuv; d=amazonses.com; t=1611394083;
-	h=From:Reply-To:To:Subject:MIME-Version:Content-Type:Message-ID:Date:Feedback-ID;
-	bh=VyFFRjQ2dqfVqRw7/HLLf++F2+mhPsxrgGJdyZ84dWk=;
-	b=CKUmy3TjqMTwvdmsCXo1ZtQwl735YkbElIUAS7YGDcaWesFSHn7TsPdtpE8JgY78
-	c9QYJAZOvRYFVOJbAH5EhsVLLcbQMhT1q9bB7NH0lqRKYhukbmkocqBocbSxYrUnUZd
-	hjinWNZZGCn9RbS4Bltxr9HlMM5e8akLt5tKAZ2M=
 From: "GOV.UK Email" <gov.uk.email@notifications.service.gov.uk>
 Reply-To: govuk-email-support@digital.cabinet-office.gov.uk
-To: covid@s3.njk.onl
 Subject: Daily update from GOV.UK for: Coronavirus (COVID-19)
 MIME-Version: 1.0
 Content-Type: multipart/alternative; 
@@ -1389,16 +1373,9 @@ You asked GOV.=E2=80=8BUK to send you one email a day about:
 
 Coronavirus (COVID-19)
 
-Unsubscribe: https://www.gov.uk/email/unsubscribe/8fe804e1-7341-4fe1-bcdf-f=
-e0236c760eb?utm_medium=3Demail&utm_campaign=3Dgovuk-notifications&utm_sourc=
-e=3Dcoronavirus-covid-19&utm_content=3Ddaily&token=3DSzWm%2FrtbOHkIumYygDAP=
-%2BHZFyzXapRSfB%2Fp9iLqSL8tSdadVoPMozCAyTUhIrSLD5PL8KUkpnntvmFrIqxJMCLptgQi=
-ytPsOtYC44F3CdeJ9e64yW8HGtB2jIpEqTlAvVwIbD45CD9dP--TJwNo1dtd3Tpdnn2--3xV0I%=
-2FFHbqeb5uEDz%2FLd4g%3D%3D
+Unsubscribe: 
 
-Manage your email preferences: https://www.gov.uk/email/manage/authenticate=
-?utm_medium=3Demail&utm_campaign=3Dgovuk-notifications&utm_source=3Dcoronav=
-irus-covid-19&utm_content=3Ddaily&address=3Dcovid%40s3.njk.onl
+Manage your email preferences: 
 
 ------=_Part_17322199_136201947.1611394083285
 Content-Type: text/html; charset=UTF-8
@@ -2481,17 +2458,11 @@ style=3D"Margin: 0 0 20px 0; font-size: 19px; line-height: 25px; color: #0B=
 0C0C;">Coronavirus (COVID-19)</p><p style=3D"Margin: 0 0 20px 0; font-size:=
  19px; line-height: 25px; color: #0B0C0C;"><a style=3D"word-wrap: break-wor=
 d; color: #1D70B8;" href=3D"https://www.gov.uk/email/unsubscribe/8fe804e1-7=
-341-4fe1-bcdf-fe0236c760eb?utm_medium=3Demail&amp;utm_campaign=3Dgovuk-noti=
-fications&amp;utm_source=3Dcoronavirus-covid-19&amp;utm_content=3Ddaily&amp=
-;token=3DSzWm%2FrtbOHkIumYygDAP%2BHZFyzXapRSfB%2Fp9iLqSL8tSdadVoPMozCAyTUhI=
-rSLD5PL8KUkpnntvmFrIqxJMCLptgQiytPsOtYC44F3CdeJ9e64yW8HGtB2jIpEqTlAvVwIbD45=
 CD9dP--TJwNo1dtd3Tpdnn2--3xV0I%2FFHbqeb5uEDz%2FLd4g%3D%3D">Unsubscribe</a><=
 /p><p style=3D"Margin: 0 0 20px 0; font-size: 19px; line-height: 25px; colo=
 r: #0B0C0C;"><a style=3D"word-wrap: break-word; color: #1D70B8;" href=3D"ht=
-tps://www.gov.uk/email/manage/authenticate?utm_medium=3Demail&amp;utm_campa=
-ign=3Dgovuk-notifications&amp;utm_source=3Dcoronavirus-covid-19&amp;utm_con=
-tent=3Ddaily&amp;address=3Dcovid%40s3.njk.onl">Manage your email preference=
-s</a></p>
+tps://www.gov.uk/email/manage/authenticate">Manage your email preferences</=
+a></p>
         <!--[if (gte mso 9)|(IE)]>
               </td>
             </tr>

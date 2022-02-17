@@ -120,22 +120,31 @@ fn parse_single(mut ps: html::Select) -> Result<Vec<GovUkChange>> {
 }
 
 fn parse_common<'a>(ps: &mut impl Iterator<Item = ElementRef<'a>>) -> Result<(String, String)> {
-    let _page_summary = {
-        let p = ps.next().context("Missing third <p> with doc summary")?;
-        p.inner_html()
-    };
-    let change = {
-        let p = ps.next().context("Missing forth <p> with change description")?;
-        p.text()
-            .nth(1)
-            .context("Missing change description contents")?
-            .to_owned()
-    };
-    let updated_at = {
-        let p = ps.next().context("Missing fifth <p> with updated timestamp")?;
-        p.text().nth(1).context("Missing timestamp <p> contents")?.to_owned()
-    };
-    Ok((change, updated_at))
+    let mut change = None;
+    let mut updated_at = None;
+    for p in ps.take(3) {
+        let mut texts = p.text();
+        if let Some(key) = texts.next() {
+            if key.contains("Change") {
+                change = texts.next()
+            } else if key.contains("Time") {
+                updated_at = texts.next()
+            } else if key.contains("summary") {
+                // not currently using page summary
+            } else {
+                bail!("Unknown key {:?}", key);
+            }
+        } else {
+            bail!("p with no text");
+        }
+        if change.is_some() && updated_at.is_some() {
+            break;
+        }
+    }
+    Ok((
+        change.context("Missing change description contents")?.to_owned(),
+        updated_at.context("Missing timestamp <p> contents")?.to_owned(),
+    ))
 }
 
 #[test]
@@ -166,6 +175,38 @@ fn test_single_2021_email_parse() {
                 .parse()
                 .unwrap(),
             category: Some("News and communications".to_owned()),
+        }]
+    )
+}
+
+#[test]
+fn test_single_2022_email_parsea() {
+    let updates = GovUkChange::from_eml(include_str!("../../tests/emails/2022-02-17T09:53:57.eml")).unwrap();
+    assert_eq!(
+        updates,
+        vec![GovUkChange {
+            change: "The FCDO no longer advises against all but essential travel to Guinea-Bissau based on the current assessment of COVID-19 risks".to_owned(),
+            updated_at: "9:53am, 17 February 2022".to_owned(),
+            url: "https://www.gov.uk/foreign-travel-advice/guinea-bissau"
+                .parse()
+                .unwrap(),
+            category: Some("Guidance and regulation".to_owned()),
+        }]
+    )
+}
+
+#[test]
+fn test_single_2022_email_parseb() {
+    let updates = GovUkChange::from_eml(include_str!("../../tests/emails/2022-02-17T09:55:47.eml")).unwrap();
+    assert_eq!(
+        updates,
+        vec![GovUkChange {
+            change: "The FCDO no longer advises against all but essential travel to Burundi based on the current assessment of COVID-19 risks ".to_owned(),
+            updated_at: "9:55am, 17 February 2022".to_owned(),
+            url: "https://www.gov.uk/foreign-travel-advice/burundi"
+                .parse()
+                .unwrap(),
+            category: Some("Guidance and regulation".to_owned()),
         }]
     )
 }

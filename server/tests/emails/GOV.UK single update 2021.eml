@@ -1,21 +1,5 @@
-DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/simple;
-	s=nxtbmcnibyvdpgybfefagukl3mg67kiw; d=notifications.service.gov.uk;
-	t=1611397753;
-	h=From:Reply-To:To:Subject:MIME-Version:Content-Type:Message-ID:Date;
-	bh=7xeqLLVhUOKDxRY4w8pYXaA4XftYto5Am98i2bTMo3I=;
-	b=jjdMK+PWVlmFWqWXLweyifvXm6UMq+rIQZ8HfYJlz9Hrn3HAhlRvXEhg3IHpchHd
-	Cj5b9emL7KOK2bMq44PCzCIdnId3jt9YM5Wc97p28As+xd/L3m2nNLIokQFLccYOZxe
-	PO3Z0f2f98cmxI+yixwgBcdX5TIt7AnYBAtyoIUI=
-DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/simple;
-	s=shh3fegwg5fppqsuzphvschd53n6ihuv; d=amazonses.com; t=1611397753;
-	h=From:Reply-To:To:Subject:MIME-Version:Content-Type:Message-ID:Date:Feedback-ID;
-	bh=7xeqLLVhUOKDxRY4w8pYXaA4XftYto5Am98i2bTMo3I=;
-	b=ic99pGnfLUpbbN6NpDur88d9W7vUaH33HrqgC5qyDTLiZ8Ta9R05bcwQwFxAqktw
-	7zDX2Y0gIokphrO7TEXJ1pOVI7DjFu1/HlIG7MbVicHCd+PZp5Hz1IEYDaSp+DmVcW0
-	RQgJv8713VupOKMv2nehS3uiNzjRXyuiRUlFClNM=
 From: "GOV.UK Email" <gov.uk.email@notifications.service.gov.uk>
 Reply-To: govuk-email-support@digital.cabinet-office.gov.uk
-To: news@s3.njk.onl
 Subject: Update from GOV.UK for: UK to host G7 Summit in Cornwall
 MIME-Version: 1.0
 Content-Type: multipart/alternative; 
@@ -70,16 +54,9 @@ You asked GOV.=E2=80=8BUK to send you an email each time we add or update a=
 
 News and communications
 
-Unsubscribe: https://www.gov.uk/email/unsubscribe/b3107f9b-cc60-418d-9785-b=
-35df21c1f03?utm_medium=3Demail&utm_campaign=3Dgovuk-notifications&utm_sourc=
-e=3Dnews-and-communications&utm_content=3Dimmediately&token=3Dyi1hjgk0i9dNt=
-fWyGinxCjX9P4Wnb9ku1%2BC3Kg2z5hdb31RDTHjeyAJL3rotwZF9GWEVB1vQA1kso6xqOTiy8n=
-4ax5JN0PUCra6fyMkpf1lt3fe3qtwxO5bN9ApqSiyce60C4HWEiKcd--jSmTf%2BFZEvfwt0RV-=
--MqghBP2ZgrumVBrcm3yjGA%3D%3D
+Unsubscribe:
 
-Manage your email preferences: https://www.gov.uk/email/manage/authenticate=
-?utm_medium=3Demail&utm_campaign=3Dgovuk-notifications&utm_source=3Dnews-an=
-d-communications&utm_content=3Dimmediately&address=3Dnews%40s3.njk.onl
+Manage your email preferences:
 
 ------=_Part_18005022_120221414.1611397753048
 Content-Type: text/html; charset=UTF-8
@@ -281,16 +258,10 @@ ut:</p><p style=3D"Margin: 0 0 20px 0; font-size: 19px; line-height: 25px; =
 color: #0B0C0C;">News and communications</p><p style=3D"Margin: 0 0 20px 0;=
  font-size: 19px; line-height: 25px; color: #0B0C0C;"><a style=3D"word-wrap=
 : break-word; color: #1D70B8;" href=3D"https://www.gov.uk/email/unsubscribe=
-/b3107f9b-cc60-418d-9785-b35df21c1f03?utm_medium=3Demail&amp;utm_campaign=
-=3Dgovuk-notifications&amp;utm_source=3Dnews-and-communications&amp;utm_con=
-tent=3Dimmediately&amp;token=3Dyi1hjgk0i9dNtfWyGinxCjX9P4Wnb9ku1%2BC3Kg2z5h=
-db31RDTHjeyAJL3rotwZF9GWEVB1vQA1kso6xqOTiy8n4ax5JN0PUCra6fyMkpf1lt3fe3qtwxO=
-5bN9ApqSiyce60C4HWEiKcd--jSmTf%2BFZEvfwt0RV--MqghBP2ZgrumVBrcm3yjGA%3D%3D">=
+?bN9ApqSiyce60C4HWEiKcd--jSmTf%2BFZEvfwt0RV--MqghBP2ZgrumVBrcm3yjGA%3D%3D">=
 Unsubscribe</a></p><p style=3D"Margin: 0 0 20px 0; font-size: 19px; line-he=
 ight: 25px; color: #0B0C0C;"><a style=3D"word-wrap: break-word; color: #1D7=
-0B8;" href=3D"https://www.gov.uk/email/manage/authenticate?utm_medium=3Dema=
-il&amp;utm_campaign=3Dgovuk-notifications&amp;utm_source=3Dnews-and-communi=
-cations&amp;utm_content=3Dimmediately&amp;address=3Dnews%40s3.njk.onl">Mana=
+0B8;" href=3D"https://www.gov.uk/email/manage/authenticate">Mana=
 ge your email preferences</a></p>
         <!--[if (gte mso 9)|(IE)]>
               </td>

@@ -54,37 +54,36 @@ cargo run --features dhat-heap --release
 Fetch updates             Total requests            100
 Fetch updates             Successful requests       100
 Fetch updates             Failed requests           0
-Fetch updates             Median time per request   35ms
-Fetch updates             Average time per request  36ms
-Fetch updates             Sample standard deviation 4ms
+Fetch updates             Median time per request   33ms
+Fetch updates             Average time per request  34ms
+Fetch updates             Sample standard deviation 6ms
+
+Fetch Brexit updates      Total requests            100
+Fetch Brexit updates      Successful requests       100
+Fetch Brexit updates      Failed requests           0
+Fetch Brexit updates      Median time per request   85ms
+Fetch Brexit updates      Average time per request  85ms
+Fetch Brexit updates      Sample standard deviation 10ms
 
 Fetch update              Total requests            100
 Fetch update              Successful requests       100
 Fetch update              Failed requests           0
-Fetch update              Median time per request   11ms
-Fetch update              Average time per request  12ms
-Fetch update              Sample standard deviation 3ms
+Fetch update              Median time per request   10ms
+Fetch update              Average time per request  10ms
+Fetch update              Sample standard deviation 1ms
 
-Fetch living in germany update Total requests            100
-Fetch living in germany update Successful requests       100
-Fetch living in germany update Failed requests           0
-Fetch living in germany update Median time per request   1333ms
-Fetch living in germany update Average time per request  1354ms
-Fetch living in germany update Sample standard deviation 126ms
-
-Time taken for tests      35.3 seconds
-Total requests            300
-Successful requests       300
-Failed requests           0
-Requests per second       8.51 [#/sec]
-Median time per request   35ms
-Average time per request  467ms
-Sample standard deviation 631ms
+Fetch large update        Total requests            100
+Fetch large update        Successful requests       100
+Fetch large update        Failed requests           0
+Fetch large update        Median time per request   16ms
+Fetch large update        Average time per request  18ms
+Fetch large update        Sample standard deviation 5ms
 ```
 
 The index page and the smaller documents are fine, but the larger documents take too long, it's likely because they allocate a lot of memory, this memory usage is leading to OOMKills on k8s and this will likely happen on publishing if actual users happen to look at large docs like this one which I actually want to link to. Allocations on large documents are clearly a problem as running this benchmark throws usage up by a couple of hundred megabytes
 
+Solved the issue with the memory usage on diffs by caching diff results, they won't be invalid until I change the algorithm anyway.
+
 ## Add another subscription
 
 Use a new @govdiff.njk.onl email address to make the subscription. Then Get access to the updates repo, look in the outbox (assuming update-tracker has already processed the confirmation email). Find the email, extract the link, then de-SMTP it by removing the =CRLF line endings and unescape equals signs (escaped as =3D)
-

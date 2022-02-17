@@ -10,10 +10,14 @@ plan:
     request:
       url: /updates
 
+  - name: Fetch Brexit updates
+    request:
+      url: /updates?tag=Brexit
+
   - name: Fetch update
     request:
       url: /update/2022-01-27T06:43:00+00:00/www.gov.uk/guidance/working-safely-during-covid-19
 
-  - name: Fetch living in germany update
+  - name: Fetch large update
     request:
       url: /update/2021-02-26T14:00:00+00:00/www.gov.uk/guidance/living-in-germany

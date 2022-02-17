@@ -83,3 +83,8 @@ Sample standard deviation 631ms
 ```
 
 The index page and the smaller documents are fine, but the larger documents take too long, it's likely because they allocate a lot of memory, this memory usage is leading to OOMKills on k8s and this will likely happen on publishing if actual users happen to look at large docs like this one which I actually want to link to. Allocations on large documents are clearly a problem as running this benchmark throws usage up by a couple of hundred megabytes
+
+## Add another subscription
+
+Use a new @govdiff.njk.onl email address to make the subscription. Then Get access to the updates repo, look in the outbox (assuming update-tracker has already processed the confirmation email). Find the email, extract the link, then de-SMTP it by removing the =CRLF line endings and unescape equals signs (escaped as =3D)
+

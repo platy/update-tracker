@@ -5,6 +5,7 @@ use std::{
     ops::Deref,
     path::Path,
     sync::Arc,
+    time::Instant,
 };
 
 use chrono::{DateTime, FixedOffset};
@@ -21,6 +22,8 @@ use update_repo::{
 type TimestampSubIndex = BTreeMap<DateTime<FixedOffset>, (Arc<Update>, HashSet<Arc<Tag>>)>;
 
 pub struct Data {
+    /// When some data was last changed
+    updated_at: Instant,
     doc_repo: DocRepo,
     /// All updates in ascending timestamp order
     updates: Vec<Arc<Update>>,
@@ -44,6 +47,7 @@ impl Data {
         let all_tags = vec![];
 
         let mut this = Self {
+            updated_at: Instant::now(),
             doc_repo,
             updates,
             index,
@@ -70,6 +74,7 @@ impl Data {
         this
     }
 
+    /// Notifies that a new update has been stored
     pub fn append_update(&mut self, update: Update) {
         self.change_index.insert(update.update_ref().clone(), update.change());
         let update = Arc::new(update);
@@ -78,6 +83,7 @@ impl Data {
             .entry(update.url().clone())
             .or_insert_with(Default::default)
             .insert(*update.timestamp(), (update, HashSet::with_capacity(2)));
+        self.updated_at = Instant::now();
     }
 
     pub fn add_tag(&mut self, ur: UpdateRef, tag: Arc<Tag>) {
@@ -158,6 +164,10 @@ impl Data {
 
     pub fn all_tags(&self) -> impl Iterator<Item = &String> {
         self.all_tags.iter()
+    }
+
+    pub fn updated_at(&self) -> Instant {
+        self.updated_at
     }
 }
 

@@ -5,7 +5,7 @@ use std::{
     mem,
     ops::Deref,
     str::FromStr,
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, RwLockWriteGuard},
     time::Instant,
 };
 
@@ -27,12 +27,14 @@ pub fn listen(addr: &str, data: Arc<RwLock<Data>>) {
 
     println!("Listen on http://{}", addr);
 
+    let default_page_fast_cache = FastCache::default();
+
     rouille::start_server_with_pool(addr, None, move |request| {
         let start = Instant::now();
         let response = find_route!(
             rouille::match_assets(request, "./static"),
             handle_root(request),
-            handle_updates(request, &data.read().unwrap()),
+            handle_updates(request, &data.read().unwrap(), &default_page_fast_cache),
             handle_update(request, &data.read().unwrap()),
             handle_doc_diff_page(request, &data.read().unwrap())
         );
@@ -63,14 +65,30 @@ route! {
 
 route! {
     (GET /updates)
-    handle_updates(request: &Request, data: &Data) {
+    handle_updates(request: &Request, data: &Data, fast_cache: &FastCache) {
+        let data_updated_at = data.updated_at();
+        let cache_guard =
+        if request.raw_query_string().is_empty() { // default query, use fast cache
+            match fast_cache.try_cache(data_updated_at) {
+                Ok((html, etag)) => return Ok(Response::html(html).with_etag(request, etag)),
+                Err(cache_guard) => Some(cache_guard),
+            }
+        } else {
+            None
+        };
+
         let url_prefix = request.get_param("url_prefix").as_deref().unwrap_or("www.gov.uk/").parse::<HttpsStrippedUrl>().map_err(|_| Error::InvalidRequest)?.0;
         let change_terms = request.get_param("change").filter(|t| !t.is_empty());
         let tag = request.get_param("tag").filter(|t| !t.is_empty()).map(Tag::new);
 
         let updates = data.list_updates(&url_prefix, change_terms, tag);
 
-        Ok(updates_page_response(updates,request,data))
+        let (html, etag) = updates_page_response(updates,request,data);
+        if let Some(mut cache_guard) = cache_guard {
+            *cache_guard = Some((data_updated_at, Arc::new((html.clone(), etag.clone()))));
+            drop(cache_guard)
+        }
+        Ok(Response::html(html).with_etag(request, etag))
     }
 }
 
@@ -141,13 +159,17 @@ route! {
     }
 }
 
-fn updates_page_response<'a>(updates: impl Iterator<Item = &'a Update>, request: &Request, data: &Data) -> Response {
+fn updates_page_response<'a>(
+    updates: impl Iterator<Item = &'a Update>,
+    request: &Request,
+    data: &Data,
+) -> (String, String) {
     let mut results = UpdateList::new(updates, request, data);
     let etag = results.etag();
     let mut result_string = String::new(); // ugh
     results.into_writer(&mut result_string).unwrap();
     let selected_tag = request.get_param("tag");
-    Response::html(format!(
+    let html = format!(
         include_str!("updates.html"),
         result_string,
         url_prefix_filter = request.get_param("url_prefix").as_deref().unwrap_or("www.gov.uk/"),
@@ -162,8 +184,8 @@ fn updates_page_response<'a>(updates: impl Iterator<Item = &'a Update>, request:
                     .unwrap_or_default()
             ))
             .collect::<String>()
-    ))
-    .with_etag(request, etag)
+    );
+    (html, etag)
 }
 
 fn diff_fields(
@@ -346,5 +368,44 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
 impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
     fn etag(&mut self) -> String {
         mem::take(&mut self.etag)
+    }
+}
+
+/// An shared in memory cache for a single page and it's etag. If the cache is invalidated, the first caller will get access to the write guard to update it, the rest will wait
+#[derive(Debug, Default)]
+struct FastCache(Arc<RwLock<FastCacheInternal>>);
+type FastCacheInternal = Option<(Instant, Arc<(String, String)>)>;
+
+impl FastCache {
+    fn try_cache(&self, oldest_allowed: Instant) -> Result<(String, String), RwLockWriteGuard<FastCacheInternal>> {
+        if let Ok(guard) = self.0.read() {
+            if let Some((rendered_at, cached)) = &*guard {
+                if oldest_allowed <= *rendered_at {
+                    // cached page is still valid
+                    let cached = cached.clone();
+                    drop(guard);
+                    return Ok(cached.deref().clone());
+                }
+            }
+        }
+        // cache invalid, empty or poisoned, promote to write lock
+        match self.0.write() {
+            Ok(guard) => {
+                // check if another thread already freshened the cache enough
+                if let Some((rendered_at, cached)) = &*guard {
+                    if oldest_allowed < *rendered_at {
+                        // cached page is still valid
+                        let cached = cached.clone();
+                        drop(guard);
+                        return Ok(cached.deref().clone());
+                    } else {
+                        Err(guard)
+                    }
+                } else {
+                    Err(guard)
+                }
+            }
+            Err(poisoned) => Err(poisoned.into_inner()),
+        }
     }
 }

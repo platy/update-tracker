@@ -78,10 +78,9 @@ route! {
         };
 
         let url_prefix = request.get_param("url_prefix").as_deref().unwrap_or("www.gov.uk/").parse::<HttpsStrippedUrl>().map_err(|_| Error::InvalidRequest)?.0;
-        let change_terms = request.get_param("change").filter(|t| !t.is_empty());
         let tag = request.get_param("tag").filter(|t| !t.is_empty()).map(Tag::new);
 
-        let updates = data.list_updates(&url_prefix, change_terms, tag);
+        let updates = data.list_updates(&url_prefix, tag);
 
         let (html, etag) = updates_page_response(updates,request,data);
         if let Some(mut cache_guard) = cache_guard {

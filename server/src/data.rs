@@ -90,11 +90,7 @@ impl Data {
         tags.insert(tag);
     }
 
-    pub fn list_updates(
-        &self,
-        base: &Url,
-        tag: Option<Tag>,
-    ) -> Box<dyn Iterator<Item = &Update> + '_> {
+    pub fn list_updates(&self, base: &Url, tag: Option<Tag>) -> Box<dyn Iterator<Item = &Update> + '_> {
         let match_tag_and_change = move |u: &&Update| {
             if let Some(tag) = &tag {
                 if !self.get_tags(u.update_ref()).contains(tag) {

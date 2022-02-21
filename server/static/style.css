@@ -406,6 +406,7 @@ section.column {
         background-color: #1b5e20
     }
     .open-government-licence .logo a {
-        background: url(https://www.nationalarchives.gov.uk/images/infoman/ogl-symbol-41px-retina-white.png) 0 0 no-repeat
+        background: url(https://www.nationalarchives.gov.uk/images/infoman/ogl-symbol-41px-retina-white.png) 0 0 no-repeat;
+        background-size: contain;
     }
 }

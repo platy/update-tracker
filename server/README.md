@@ -87,3 +87,16 @@ Solved the issue with the memory usage on diffs by caching diff results, they wo
 ## Add another subscription
 
 Use a new @govdiff.njk.onl email address to make the subscription. Then Get access to the updates repo, look in the outbox (assuming update-tracker has already processed the confirmation email). Find the email, extract the link, then de-SMTP it by removing the =CRLF line endings and unescape equals signs (escaped as =3D)
+
+## Process access logs
+
+Get the logs from the server, strip out the lines which aren't about the access logs using:
+
+```regex
+s/^[^2].*\n//gm
+```
+
+Then convert to csv with:
+```regex
+s/> (\S*) +(\S*) +< (.*) \( *(\S*)ms\) <- +(.*) + (\/.*) \[Referer: (".*") User-agent: (".*")\]/$1,$2,$3,$4,$5,$6,$7,$8/g
+```

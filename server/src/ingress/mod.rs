@@ -17,12 +17,8 @@ use ureq::get;
 use url::Url;
 
 pub mod email_update;
-pub mod git;
 
-use self::{
-    email_update::GovUkChange,
-    git::{GitRepoTransaction, GitRepoWriter},
-};
+use self::email_update::GovUkChange;
 use crate::data::Data;
 use dotenv::dotenv;
 use file_locker::FileLock;
@@ -47,14 +43,8 @@ pub fn run(new_repo_path: &Path, data: Arc<RwLock<Data>>) -> Result<()> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or_else(|| new_repo_path.join("work"));
-    let git_repo_path = dotenv::var("GIT_REPO")?;
-    let git_reference_var = dotenv::var("GIT_REF");
-    let git_reference = git_reference_var.as_deref().unwrap_or("refs/heads/main");
     fs::create_dir_all(&govuk_emails_inbox).context(format!("Error trying to create dir {}", &govuk_emails_inbox))?;
     fs::create_dir_all(&outbox_dir).context(format!("Error trying to create dir {:?}", &outbox_dir))?;
-
-    println!("Pushing git repo {}", &git_repo_path);
-    git::push(&git_repo_path).context("Pushing git repo")?;
 
     println!("Watching inbox {} for updates", &govuk_emails_inbox);
 
@@ -62,8 +52,6 @@ pub fn run(new_repo_path: &Path, data: Arc<RwLock<Data>>) -> Result<()> {
         govuk_emails_inbox.as_ref(),
         &outbox_dir,
         &work_dir,
-        git_repo_path.as_ref(),
-        git_reference,
         new_repo_path,
         &data,
     )?;
@@ -72,8 +60,7 @@ pub fn run(new_repo_path: &Path, data: Arc<RwLock<Data>>) -> Result<()> {
             .process_updates()
             .expect("the processing fails, the repo may be unclean");
         if count > 0 {
-            println!("Processed {} update emails, pushing", count);
-            git::push(&git_repo_path).unwrap_or_else(|err| println!("Push failed : {}", err));
+            println!("Processed {} update emails", count);
         }
         thread::sleep(Duration::from_secs(1));
     }
@@ -83,7 +70,6 @@ struct UpdateEmailProcessor<'a> {
     in_dir: &'a Path,
     out_dir: &'a Path,
     work_dir: &'a Path,
-    git: GitRepoWriter<'a>,
     new: NewRepoWriter<'a>,
 }
 
@@ -92,8 +78,6 @@ impl<'a> UpdateEmailProcessor<'a> {
         in_dir: &'a Path,
         out_dir: &'a Path,
         work_dir: &'a Path,
-        git_repo: &'a Path,
-        git_reference: &'a str,
         new_repo: &Path,
         data: &'a RwLock<Data>,
     ) -> Result<Self> {
@@ -101,7 +85,6 @@ impl<'a> UpdateEmailProcessor<'a> {
             in_dir,
             out_dir,
             work_dir,
-            git: GitRepoWriter::new(git_repo, git_reference)?,
             new: NewRepoWriter::new(new_repo, data)?,
         })
     }
@@ -159,15 +142,13 @@ impl<'a> UpdateEmailProcessor<'a> {
                 return Ok(false);
             }
         };
-        let mut git_transaction = self.git.start_transaction()?;
         for change in &updates {
-            if let Err(err) = self.handle_change(change, &mut git_transaction) {
+            if let Err(err) = self.handle_change(change) {
                 eprintln!("Error processing change: {:?}: {:?}", change, &err);
                 return Ok(false);
             }
         }
         // successfully handled, 'commit' the new commits by updating the reference and then move email to outbox
-        git_transaction.commit(&format!("Added updates from {:?}", dir_entry.path()))?;
         let done_path = self.out_dir.join(&to_dir_name).join(dir_entry.file_name());
         fs::create_dir_all(done_path.parent().unwrap()).context("Creating outbox dir")?;
         fs::rename(&working_path, &done_path).context(format!(
@@ -186,13 +167,10 @@ impl<'a> UpdateEmailProcessor<'a> {
             updated_at,
             category,
         }: &GovUkChange,
-        git_transaction: &mut GitRepoTransaction,
     ) -> Result<()> {
         if let Err(err) = self.new.write_update(url, updated_at, change, category.as_deref()) {
             println!("Error writing to update repo {}", err);
         }
-
-        let mut commit_builder = git_transaction.start_change()?;
 
         for res in FetchDocs::fetch(url.clone()) {
             let (path, content) = res?;
@@ -209,10 +187,7 @@ impl<'a> UpdateEmailProcessor<'a> {
             if content.is_html() {
                 assert!(path.set_extension("html"));
             }
-            commit_builder.add_doc(&path, &content)?;
         }
-
-        commit_builder.commit_update(updated_at, change, category.as_deref())?;
         Ok(())
     }
 }

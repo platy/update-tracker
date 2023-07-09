@@ -19,7 +19,6 @@ cacache = "10"
 scraper = "0.12.0"
 mailparse = "0.13.6"
 ureq = "2.3.0"
-git2 = { version = "0.13.23", default-features = false, features = ["ssh"] }
 anyhow = "1.0.44"
 dotenv = "0.15.0"
 file-locker = "1"

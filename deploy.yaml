@@ -36,7 +36,7 @@ spec:
   volumeMode: Filesystem
   resources:
     requests:
-      storage: 15Gi
+      storage: 20Gi
 
 ---
 apiVersion: apps/v1
@@ -54,26 +54,6 @@ spec:
       labels:
         app: update-tracker
     spec:
-      initContainers:
-      - name: prepare-repo
-        image: rg.nl-ams.scw.cloud/njkonl/clone-repo:0.5
-        resources:
-          limits:
-            memory: "1Gi"
-            cpu: "1000m"
-          requests:
-            memory: "256Mi"
-            cpu: "100m"
-        volumeMounts:
-          - mountPath: "/repomount"
-            name: gitrepo
-          - mountPath: /root/.ssh
-            name: ssh-key
-            readOnly: true
-        terminationMessagePolicy: FallbackToLogsOnError
-        args:
-          - /repomount/repo
-          - git@github.com:platy/gitgovuk.git
       containers:
       - name: smtp-dump
         image: rg.nl-ams.scw.cloud/njkonl/smtp-dump:0.1.1

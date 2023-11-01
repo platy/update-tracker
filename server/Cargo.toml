@@ -25,6 +25,7 @@ file-locker = "1"
 chrono-tz = "0.6.0"
 
 dhat = { version = "0.3", optional = true }
+askama = "0.12.1"
 
 [dev-dependencies]
 html-diff = "0.0.6"

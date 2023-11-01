@@ -1,5 +1,6 @@
-use std::fmt::{self, Write};
+use std::fmt;
 
+use askama::Template;
 use rouille::Request;
 
 pub struct Page<I> {
@@ -41,46 +42,39 @@ impl<T, I: Iterator<Item = T>> Page<I> {
         }
     }
 
-    pub fn into_writer(self, f: &mut String) -> fmt::Result {
+    /// takes ownership of the page in order to count the remaining items following this page from the iterator
+    pub fn render_pagination_into(self, f: &mut String) -> fmt::Result {
         let offset = self.offset;
         let limit = self.limit;
 
         let filtered_count = offset + self.emitted + self.items.count();
 
-        let page_num = offset / limit + 1;
-        let page_count = filtered_count / limit + 1;
-
-        let prev_offset = (offset > 0).then(|| offset.checked_sub(limit).unwrap_or_default());
-        let next_offset = (offset + limit <= filtered_count).then(|| offset + limit);
-
-        if let Some(prev_offset) = prev_offset {
-            writeln!(
-                f,
-                r#"<a href="{href}&offset={prev_offset}">prev</a>"#,
-                href = self.href,
-                prev_offset = prev_offset,
-            )?;
+        Ok(PaginationTemplate {
+            href: self.href,
+            offset,
+            emitted: self.emitted,
+            filtered_count,
+            page_num: offset / limit + 1,
+            page_count: filtered_count / limit + 1,
+            prev_offset: (offset > 0).then(|| offset.checked_sub(limit).unwrap_or_default()),
+            next_offset: (offset + limit <= filtered_count).then(|| offset + limit),
         }
-        writeln!(
-            f,
-            r#" Page {page_num} of {page_count} (Updates {offset} to {last} of {total}) "#,
-            page_num = page_num,
-            page_count = page_count,
-            offset = offset + 1,
-            last = offset + self.emitted,
-            total = filtered_count,
-        )?;
-        if let Some(next_offset) = next_offset {
-            writeln!(
-                f,
-                r#"<a href="{href}&offset={next_offset}">next</a>"#,
-                href = self.href,
-                next_offset = next_offset,
-            )?;
-        }
-        writeln!(f, "</div>")?;
-        Ok(())
+        .render_into(f)
+        .unwrap())
     }
+}
+
+#[derive(Template)]
+#[template(path = "page.html")]
+pub struct PaginationTemplate {
+    href: String,
+    offset: usize,
+    emitted: usize,
+    filtered_count: usize,
+    page_num: usize,
+    page_count: usize,
+    prev_offset: Option<usize>,
+    next_offset: Option<usize>,
 }
 
 impl<T, I: Iterator<Item = T>> Iterator for Page<I> {

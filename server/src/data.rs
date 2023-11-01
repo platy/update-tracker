@@ -55,7 +55,10 @@ impl Data {
             change_index,
         };
 
-        for update in update_repo.list_all(&"https://www.gov.uk/".parse().unwrap()).unwrap() {
+        for update in update_repo
+            .list_all(&"https://www.gov.uk/".parse().unwrap())
+            .expect("Failed to list all updates in repo")
+        {
             let update = update.unwrap();
             this.append_update(update);
         }

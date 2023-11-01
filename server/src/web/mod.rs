@@ -354,12 +354,8 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
             writeln!(f, r#"</a>"#)?;
         }
 
-        writeln!(
-            f,
-            "</div>
-        <div>"
-        )?;
-        self.page.into_writer(f)?;
+        writeln!(f, "</div>")?;
+        self.page.render_pagination_into(f)?;
         writeln!(f, "</div>")?;
         Ok(())
     }

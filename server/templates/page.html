@@ -1,0 +1,11 @@
+<div>
+{% if let Some(prev_offset) = prev_offset %}
+  <a href="{{href}}&offset={{prev_offset}}">prev</a>
+{% endif %}
+
+Page {{page_num}} of {{page_count}} (Updates {{offset + 1}} to {{offset + emitted}} of {{filtered_count}})
+
+{% if let Some(next_offset) = next_offset %}
+  <a href="{{href}}&offset={{next_offset}}">next</a>
+{% endif %}
+</div>

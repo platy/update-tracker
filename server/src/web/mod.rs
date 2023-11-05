@@ -1,5 +1,5 @@
 use std::{
-    borrow::{Borrow, Cow},
+    borrow::Cow,
     env,
     fmt::{self, Write},
     mem,
@@ -167,7 +167,7 @@ fn updates_page_response<'a>(
     let mut results = UpdateList::new(updates, request, data);
     let etag = results.etag();
     let mut result_string = String::new(); // ugh
-    results.into_writer(&mut result_string).unwrap();
+    results.render_into(&mut result_string).unwrap();
     let selected_tag = request.get_param("tag");
     let html = format!(
         include_str!("updates.html"),
@@ -309,7 +309,7 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
         }
     }
 
-    fn into_writer(mut self, f: &mut String) -> fmt::Result {
+    fn render_into(mut self, f: &mut String) -> fmt::Result {
         let mut current_date = None;
         writeln!(
             f,
@@ -321,33 +321,26 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
         )?;
 
         for update in &mut self.page {
-            let update = update.borrow();
             let update_date = update.timestamp().date();
             if Some(update_date) != current_date {
                 current_date = Some(update_date);
                 writeln!(f, r#"<h3 class="date-seperator">{}</h3>"#, update_date.naive_local()).unwrap();
             }
-            let mut update_path = update.timestamp().to_rfc3339();
-            write!(
-                &mut update_path,
-                "/{}{}",
+            let updated_doc_path = update.url().path();
+            let update_path = format!(
+                "/update/{}/{}{updated_doc_path}",
+                update.timestamp().to_rfc3339(),
                 update.url().host_str().unwrap_or_default(),
-                update.url().path(),
-            )?;
-            writeln!(
+            );
+            write!(
                 f,
-                r#"<a href="/update/{}" class="update-url">{}</a>"#,
-                &update_path,
-                update.url().path(),
+                r#"<a href="/{update_path}" class="update-url">{updated_doc_path}</a>
+                <a href="{update_path}" class="update-description">{change_time} {change_description}</a>
+                <a href="{update_path}" class="update-tags">
+                "#,
+                change_time = update.timestamp().time().format_with_items(StrftimeItems::new("%H:%M")),
+                change_description = update.change(),
             )?;
-            writeln!(
-                f,
-                r#"<a href="/update/{}" class="update-description">{} {}</a>"#,
-                &update_path,
-                update.timestamp().time().format_with_items(StrftimeItems::new("%H:%M")),
-                update.change(),
-            )?;
-            writeln!(f, r#"<a href="/update/{}" class="update-tags">"#, &update_path)?;
             for tag in self.data.get_tags(update.update_ref()) {
                 writeln!(f, "<div>{}</div>", tag.name())?;
             }

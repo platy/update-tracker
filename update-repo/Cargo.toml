@@ -1,0 +1,18 @@
+[package]
+name = "update-repo"
+version = "0.1.0"
+authors = ["Mike Bush <platy@njk.onl>"]
+edition = "2018"
+description = "Core library for repository interaction"
+
+[dependencies]
+chrono = { workspace = true }
+url = { workspace = true }
+html5streams = { git = "http://github.com/platy/html5streams" }
+html5ever = "0.25.1"
+log = { version = "0.3" }
+
+[dev-dependencies]
+anyhow = "1.0.44"
+chrono-tz = "0.6.0"
+clap = { version = "3.0", features = ["derive"] } 

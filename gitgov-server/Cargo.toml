@@ -1,19 +1,20 @@
 [package]
-name = "update-tracker"
+name = "gitgov-server"
 version = "0.2.21"
+authors = ["Mike Bush <platy@njk.onl>"]
 edition = "2018"
+description = "GitGov server implementation"
 include = ["src/**/*", "README.md"]
 
 [dependencies]
-chrono = "0.4.19"
-url = "2.2.2"
-
+update-repo = { path = "../update-repo" }
+chrono = { workspace = true }
+url = { workspace = true }
 form_urlencoded = "1.0.1"
 htmldiff = "0.1.0"
 qp-trie = "0.7.7"
 rouille = "3.3.1"
 simsearch = "0.2.3"
-update-repo = { path = ".." }
 cacache = "10"
 
 scraper = "0.12.0"
@@ -26,8 +27,11 @@ chrono-tz = "0.6.0"
 
 dhat = { version = "0.3", optional = true }
 askama = "0.12.1"
+log = { version = "0.3" }
 
 [dev-dependencies]
+anyhow = "1.0.44"
+chrono-tz = "0.6.0" 
 html-diff = "0.0.6"
 pretty_assertions = "1.0.0"
 

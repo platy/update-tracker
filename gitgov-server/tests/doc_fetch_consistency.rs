@@ -1,6 +1,6 @@
 use pretty_assertions::assert_eq;
 use update_repo::doc::content::*;
-use update_tracker::ingress::retrieve_doc;
+use gitgov_server::ingress::retrieve_doc;
 
 macro_rules! assert_doc {
     ($doc:expr, $url:expr, $body:expr) => {
@@ -8,7 +8,7 @@ macro_rules! assert_doc {
         let url = $url;
         assert_eq!(doc.url.as_str(), url);
         if let DocContent::DiffableHtml(content, _, _) = &doc.content {
-            let diff = html_diff::get_differences($body, content);
+            let diff = html_diff::get_differences($body, &content);
             assert!(
                 diff.is_empty(),
                 "Found differences in file at url {} : {}",

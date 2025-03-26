@@ -208,7 +208,7 @@ pub struct IterUrlRepoLeaves<'r, Leaf> {
     make_leaf: fn(Url, &str, &fs::DirEntry) -> Leaf,
 }
 
-impl<'r, Leaf> Iterator for IterUrlRepoLeaves<'r, Leaf> {
+impl<Leaf> Iterator for IterUrlRepoLeaves<'_, Leaf> {
     type Item = io::Result<Leaf>;
 
     fn next(&mut self) -> Option<Self::Item> {

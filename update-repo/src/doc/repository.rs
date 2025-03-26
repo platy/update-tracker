@@ -618,7 +618,7 @@ mod test {
     fn test_repo(name: &str) -> DocRepo {
         let path = format!("tmp/{}", name);
         let _ = fs::remove_dir_all(&path);
-        let repo = DocRepo::new(path).unwrap();
-        repo
+
+        DocRepo::new(path).unwrap()
     }
 }

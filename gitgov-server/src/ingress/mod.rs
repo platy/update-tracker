@@ -159,8 +159,8 @@ impl<'a> UpdateEmailProcessor<'a> {
         Ok(true)
     }
 
-    fn handle_change<'repo>(
-        &'repo self,
+    fn handle_change(
+        &self,
         GovUkChange {
             url,
             change,
@@ -244,7 +244,7 @@ impl Iterator for FetchDocs {
 }
 
 /// Retrieve a document from the given URL
-/// 
+///
 /// Returns None if the document is not found or has been deleted
 pub fn retrieve_doc(url: &Url) -> Result<Option<Doc>> {
     println!("retrieving url : {}", url);
@@ -337,7 +337,7 @@ impl<'a> NewRepoWriter<'a> {
         content: impl AsRef<[u8]>,
     ) -> io::Result<()> {
         self.doc_repo
-            .create(url.into(), ts, &mut *self.write_avoidance_buffer.borrow_mut())
+            .create(url.into(), ts, &mut self.write_avoidance_buffer.borrow_mut())
             .and_then(|mut doc| doc.write_all(content.as_ref()).and_then(|_| doc.done()))
             .map(|doc| {
                 println!("Wrote doc to doc repo");

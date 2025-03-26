@@ -62,7 +62,7 @@ impl TagRepo {
         &self,
         tag: &str,
     ) -> io::Result<impl Iterator<Item = Result<UpdateRef, <UpdateRef as FromStr>::Err>>> {
-        let reader = BufReader::new(fs::File::open(&self.path_for(tag))?);
+        let reader = BufReader::new(fs::File::open(self.path_for(tag))?);
         Ok(reader.lines().map(|line| {
             let s = line.unwrap();
             s.parse()

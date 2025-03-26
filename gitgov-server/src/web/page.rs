@@ -49,7 +49,7 @@ impl<T, I: Iterator<Item = T>> Page<I> {
 
         let filtered_count = offset + self.emitted + self.items.count();
 
-        Ok(PaginationTemplate {
+        PaginationTemplate {
             href: self.href,
             offset,
             emitted: self.emitted,
@@ -60,7 +60,8 @@ impl<T, I: Iterator<Item = T>> Page<I> {
             next_offset: (offset + limit <= filtered_count).then(|| offset + limit),
         }
         .render_into(f)
-        .unwrap())
+        .unwrap();
+        Ok(())
     }
 }
 

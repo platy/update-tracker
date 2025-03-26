@@ -99,7 +99,7 @@ fn parse_bulk_update(h2: ElementRef) -> Result<Option<GovUkChange>> {
         ensure!(a.value().name() == "a");
         (a.inner_html(), a.value().attr("href").context("missing href")?)
     };
-    let mut siblings = h2.next_siblings().map(ElementRef::wrap).flatten();
+    let mut siblings = h2.next_siblings().filter_map(ElementRef::wrap);
     let (change, updated_at) = parse_common(&mut siblings)?;
     ensure!(siblings.next().map(|e| e.value().name()) == Some("hr"));
 

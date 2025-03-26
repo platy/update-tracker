@@ -180,7 +180,7 @@ fn updates_page_response<'a>(
                 r#"<option {selected}>{tag}</option>"#,
                 tag = tag,
                 selected = (selected_tag.as_ref() == Some(tag))
-                    .then(|| "selected")
+                    .then_some("selected")
                     .unwrap_or_default()
             ))
             .collect::<String>()
@@ -354,7 +354,7 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
     }
 }
 
-impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
+impl<'a, Us: Iterator<Item = &'a Update>> UpdateList<'a, '_, Us> {
     fn etag(&mut self) -> String {
         mem::take(&mut self.etag)
     }
@@ -386,7 +386,7 @@ impl FastCache {
                         // cached page is still valid
                         let cached = cached.clone();
                         drop(guard);
-                        return Ok(cached.deref().clone());
+                        Ok(cached.deref().clone())
                     } else {
                         Err(guard)
                     }

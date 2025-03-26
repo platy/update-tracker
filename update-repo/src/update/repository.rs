@@ -105,7 +105,7 @@ impl UpdateRepo {
                 .0
                 .parse()
                 .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
-            let change = String::from_utf8(fs::read(&self.path_for(&url, Some(&timestamp)))?)
+            let change = String::from_utf8(fs::read(self.path_for(&url, Some(&timestamp)))?)
                 .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
             Ok(Update::new(url.clone(), timestamp, change))
         }))

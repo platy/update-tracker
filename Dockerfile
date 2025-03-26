@@ -17,7 +17,7 @@ RUN cargo build --release -p update-tracker
 FROM debian:bullseye-slim AS runtime
 RUN apt-get update && apt-get install -y openssl git && rm -rf /var/lib/apt/lists/*
 ENV LISTEN_ADDR 0.0.0.0:80
-WORKDIR /app/server
+WORKDIR /app/gitgov-server
 ENTRYPOINT ["/usr/local/bin/update-tracker"]
-COPY ./server/static /app/server/static
+COPY ./gitgov-server/static /app/gitgov-server/static
 COPY --from=builder /app/target/release/update-tracker /usr/local/bin

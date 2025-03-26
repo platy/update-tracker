@@ -8,10 +8,10 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 # Build dependencies - this is the caching Docker layer!
-RUN cargo chef cook --release --recipe-path recipe.json -p update-tracker
+RUN cargo chef cook --release --recipe-path recipe.json -p gitgov-server
 # Build application
 COPY . /app
-RUN cargo build --release -p update-tracker
+RUN cargo build --release -p gitgov-server
 
 # We do not need the Rust toolchain to run the binary!
 FROM debian:bullseye-slim AS runtime

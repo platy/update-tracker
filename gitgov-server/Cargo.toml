@@ -13,7 +13,7 @@ htmldiff = "0.1.0"
 qp-trie = "0.7.7"
 rouille = "3.3.1"
 simsearch = "0.2.3"
-update-repo = { path = ".." }
+update-repo = { path = "../update-repo" }
 cacache = "10"
 
 scraper = "0.12.0"

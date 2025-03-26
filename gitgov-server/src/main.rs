@@ -7,7 +7,7 @@ use std::{
     thread,
 };
 
-use update_tracker::{data::Data, ingress, web};
+use gitgov_server::{data::Data, ingress, web};
 
 fn main() {
     #[cfg(feature = "dhat-heap")]

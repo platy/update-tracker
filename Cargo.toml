@@ -2,4 +2,8 @@
 members = [
     "update-repo",
     "gitgov-server"
-] 
+]
+
+[workspace.dependencies]
+chrono = { version = "0.4.19", default-features = false, features = ["std", "clock"] }
+url = "2.2.2"

@@ -1,6 +1,16 @@
+//! Test that the document fetch and strip process is consistent
+//!
+//! The document format is changed on the backend for many reasons, and we need to ensure that the document fetch and strip process is consistent.
+//! The test can be synced with the backend by fetching new version of the docs, eg.
+//!
+//! ```sh
+//! cargo run --bin fetch https://www.gov.uk/change-name-deed-poll/make-an-adult-deed-poll gitgov-server/tests/govuk
+//! ```
+//!
+
+use gitgov_server::ingress::retrieve_doc;
 use pretty_assertions::assert_eq;
 use update_repo::doc::content::*;
-use gitgov_server::ingress::retrieve_doc;
 
 macro_rules! assert_doc {
     ($doc:expr, $url:expr, $body:expr) => {
@@ -57,10 +67,10 @@ fn fetch_and_strip_doc_with_attachments_and_history() {
     );
     assert_eq!(doc.content.attachments().unwrap(),
         vec![
-            "https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/792313/bus-open-data-consultation-response.pdf".parse().unwrap(),
+            "https://assets.publishing.service.gov.uk/media/5ca4b38d40f0b625eb19dba5/bus-open-data-consultation-response.pdf".parse().unwrap(),
             "https://www.gov.uk/government/consultations/bus-services-act-2017-bus-open-data/bus-services-act-2017-bus-open-data-html".parse().unwrap(),
-            "https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/722573/bus-services-act-2017-open-data-consultation.pdf".parse().unwrap(),
-            "https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/722576/bus-open-data-case-for-change.pdf".parse().unwrap(),
+            "https://assets.publishing.service.gov.uk/media/5b3de141ed915d39d5dab509/bus-services-act-2017-open-data-consultation.pdf".parse().unwrap(),
+            "https://assets.publishing.service.gov.uk/media/5b3de1eded915d39e7ed0e7e/bus-open-data-case-for-change.pdf".parse().unwrap(),
         ]);
     assert_eq!(
         doc.content.history().unwrap(),

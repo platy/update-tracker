@@ -266,8 +266,9 @@ impl HtmlSink<u32> for AttachmentExtractor {
             ns: ns!(),
             local: local_name!("href"),
         };
-        let matcher =
-            css_select!((."attachment") (."title") ("a")).or(css_select!((."attachment") (."download") ("a")));
+        let matcher = css_select!((."attachment") (."title") ("a"))
+            .or(css_select!((."attachment") (."download") ("a")))
+            .or(css_select!((."gem-c-attachment__title") ("a")));
         if matcher.context_match(context, element) {
             if let Some(href) = element.attr(HREF) {
                 self.0.push(href.clone());

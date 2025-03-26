@@ -1,4 +1,13 @@
-use anyhow::Result;
+//! Fetch a document from the given URL and save it to the repository
+//!
+//! Usage:
+//!
+//! ```
+//! cargo run --bin fetch <url> <repository-path>
+//! ```
+//!
+//!
+use anyhow::{anyhow, Result};
 use std::{
     collections::VecDeque,
     env::args_os,
@@ -8,7 +17,7 @@ use std::{
 };
 use url::Url;
 
-use gitgov_rs::retrieve_doc;
+use gitgov_server::ingress::retrieve_doc;
 
 fn main() -> Result<()> {
     let args: Vec<_> = args_os().collect();
@@ -28,7 +37,7 @@ fn main() -> Result<()> {
     urls.push_back(url);
 
     while let Some(url) = urls.pop_front() {
-        let doc = retrieve_doc(&url)?;
+        let doc = retrieve_doc(&url)?.ok_or(anyhow!("Document not found: {}", url))?;
         urls.extend(doc.content.attachments().unwrap_or_default().iter().cloned());
 
         let mut path = Path::new(&dir).join(doc.url.path().strip_prefix('/').unwrap());

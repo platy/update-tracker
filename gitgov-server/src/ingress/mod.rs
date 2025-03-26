@@ -243,6 +243,9 @@ impl Iterator for FetchDocs {
     }
 }
 
+/// Retrieve a document from the given URL
+/// 
+/// Returns None if the document is not found or has been deleted
 pub fn retrieve_doc(url: &Url) -> Result<Option<Doc>> {
     println!("retrieving url : {}", url);
     let response = match get(url.as_str())

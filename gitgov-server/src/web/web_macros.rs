@@ -43,7 +43,7 @@ macro_rules! path {
 }
 
 /// Create a http handler for a specific route.
-/// ```
+/// ```ignore
 /// route! {
 ///     (GET /foo/{bar: usize}/{baz})
 ///     my_route(request: &Request, arg: &Arg) {

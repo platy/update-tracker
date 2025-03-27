@@ -13,8 +13,8 @@ url = { workspace = true }
 form_urlencoded = "1.0.1"
 htmldiff = "0.1.0"
 qp-trie = "0.7.7"
-rouille = "3.3.1"
-simsearch = "0.2.3"
+rouille = "3.6" # looks like this isn't getting updated, and uses multipart and buf_redux which will be reected in a future version of rust
+simsearch = "=0.2.3" # 0.2.4 breaks a trait bound
 cacache = "10"
 
 scraper = "0.12.0"

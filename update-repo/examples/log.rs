@@ -168,7 +168,7 @@ impl Filter {
         if s.is_empty() {
             return Ok(None);
         }
-        let mut date = NaiveDate::from_ymd(0, 1, 1);
+        let mut date = NaiveDate::from_ymd_opt(0, 1, 1).unwrap();
         let mut date_parts = s.split('-');
         date = date
             .with_year(date_parts.next().unwrap_or("").parse().context("Error parsing year")?)
@@ -179,7 +179,7 @@ impl Filter {
         if let Some(d) = date_parts.next().map(str::parse).transpose()? {
             date = date.with_day(d).context("Error parsing day")?;
         }
-        Ok(Some(date.and_hms(0, 0, 0)))
+        Ok(Some(date.and_hms_opt(0, 0, 0).unwrap()))
     }
 
     fn parse_age_bound(mut s: &str) -> Result<Option<Duration>> {

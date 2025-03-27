@@ -333,10 +333,10 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
         )?;
 
         for update in &mut self.page {
-            let update_date = update.timestamp().date();
+            let update_date = update.timestamp().date_naive();
             if Some(update_date) != current_date {
                 current_date = Some(update_date);
-                writeln!(f, r#"<h3 class="date-seperator">{}</h3>"#, update_date.naive_local()).unwrap();
+                writeln!(f, r#"<h3 class="date-seperator">{}</h3>"#, update_date).unwrap();
             }
             let updated_doc_path = update.url().path();
             let update_path = format!(

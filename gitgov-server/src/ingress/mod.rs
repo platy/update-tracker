@@ -299,13 +299,16 @@ impl<'a> NewRepoWriter<'a> {
     }
 
     fn write_update(&self, url: &Url, updated_at: &str, change: &str, category: Option<&str>) -> Result<()> {
-        const DATE_FORMAT: &str = "%I:%M%p, %d %B %Y";
-        if let Ok(ts) = chrono_tz::Europe::London
-            .datetime_from_str(updated_at, DATE_FORMAT)
+        const DATE_FORMAT: &str = "%I:%M%p, %d %B %Y"; // 12:00pm, 27 March 2025
+        if let Ok(ts) = chrono::NaiveDateTime::parse_from_str(updated_at, DATE_FORMAT)
+            .map(|dt| {
+                chrono_tz::Europe::London
+                    .from_local_datetime(&dt)
+                    .unwrap()
+                    .fixed_offset()
+            })
             .context("parsing timestamp")
         {
-            let ts = ts.with_timezone(&ts.offset().fix());
-
             let update_res = self.update_repo.create(url.clone().into(), ts, change).map(|update| {
                 println!("Wrote update to update repo");
                 if let Ok(mut data) = self.data.write() {

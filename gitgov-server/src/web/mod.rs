@@ -122,9 +122,19 @@ route! {
             doc_from = from_ts.map_or(String::new(), |v| v.to_string()),
             doc_to = to_ts.map_or(String::new(), |v| v.to_string()),
             body = body,
-            history = updates.iter().rev().map(|(_, (update, _tags))| {
-                format!(r#"<a href="/update/{}/{}{}"><p class="update-description">{}<br />{}</p></a>"#, update.timestamp().to_rfc3339(), update.url().host_str().unwrap(), update.url().path(), update.timestamp().format("%F %H:%M"), update.change())
-            }).collect::<String>()
+            history = updates.iter().rev().fold(String::new(), |mut acc, (_, (update, _tags))| {
+                write!(
+                    acc,
+                    r#"<a href="/update/{}/{}{}"><p class="update-description">{}<br />{}</p></a>"#,
+                    update.timestamp().to_rfc3339(),
+                    update.url().host_str().unwrap(),
+                    update.url().path(),
+                    update.timestamp().format("%F %H:%M"),
+                    update.change()
+                )
+                .unwrap();
+                acc
+            }),
         ))
         .with_status_code(if from_ts.is_none() && to_ts.is_none() { 404 } else { 200 })
         .with_etag(
@@ -174,16 +184,18 @@ fn updates_page_response<'a>(
         result_string,
         url_prefix_filter = request.get_param("url_prefix").as_deref().unwrap_or("www.gov.uk/"),
         change_filter = request.get_param("change").as_deref().unwrap_or(""),
-        tag_options = data
-            .all_tags()
-            .map(|tag| format!(
+        tag_options = data.all_tags().fold(String::new(), |mut acc, tag| {
+            write!(
+                acc,
                 r#"<option {selected}>{tag}</option>"#,
                 tag = tag,
                 selected = (selected_tag.as_ref() == Some(tag))
                     .then_some("selected")
                     .unwrap_or_default()
-            ))
-            .collect::<String>()
+            )
+            .unwrap();
+            acc
+        }),
     );
     (html, etag)
 }

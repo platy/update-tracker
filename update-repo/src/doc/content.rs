@@ -53,7 +53,7 @@ impl DocContent {
         let attachments = attachments.into_iter();
         let attachments: Vec<Url> = if let Some(url) = url {
             attachments
-                .map(|attachment_url| url.join(&*attachment_url))
+                .map(|attachment_url| url.join(&attachment_url))
                 .filter(|attachment_url| attachment_url.as_ref() != Ok(url))
                 .collect::<Result<_, _>>()?
         } else {
@@ -146,7 +146,7 @@ impl<InputHandle: Eq + Copy, S: HtmlSink<InputHandle>> HtmlSink<InputHandle> for
             if let Some(select_index) = context
                 .iter()
                 .enumerate()
-                .find_map(|(index, elem)| (elem.handle == select_handle).then(|| index))
+                .find_map(|(index, elem)| (elem.handle == select_handle).then_some(index))
             {
                 context = &context[select_index..];
             } else {
@@ -199,7 +199,7 @@ impl<InputHandle: Eq + Copy, S: HtmlSink<InputHandle>> HtmlSink<InputHandle> for
             if let Some(select_index) = context
                 .iter()
                 .enumerate()
-                .find_map(|(index, elem)| (elem.handle == select_handle).then(|| index))
+                .find_map(|(index, elem)| (elem.handle == select_handle).then_some(index))
             {
                 let context = &context[select_index..];
                 if let Some(skip_handle) = self.skip_handle {
@@ -221,7 +221,7 @@ impl<InputHandle: Eq + Copy, S: HtmlSink<InputHandle>> HtmlSink<InputHandle> for
             if let Some(select_index) = context
                 .iter()
                 .enumerate()
-                .find_map(|(index, elem)| (elem.handle == select_handle).then(|| index))
+                .find_map(|(index, elem)| (elem.handle == select_handle).then_some(index))
             {
                 let context = &context[select_index..];
                 if let Some(skip_handle) = self.skip_handle {

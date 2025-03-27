@@ -1258,7 +1258,7 @@ dependencies = [
 [[package]]
 name = "html5streams"
 version = "0.1.0"
-source = "git+http://github.com/platy/html5streams#2a023e49dd99e92c9124b558b0409634bd2d990e"
+source = "git+http://github.com/platy/html5streams#1141709290679bdc5776f99839b12b26a0b25e02"
 dependencies = [
  "html5ever 0.25.2",
 ]

@@ -346,7 +346,7 @@ impl<'a, 'd, Us: Iterator<Item = &'a Update>> UpdateList<'a, 'd, Us> {
             );
             write!(
                 f,
-                r#"<a href="/{update_path}" class="update-url">{updated_doc_path}</a>
+                r#"<a href="{update_path}" class="update-url">{updated_doc_path}</a>
                 <a href="{update_path}" class="update-description">{change_time} {change_description}</a>
                 <a href="{update_path}" class="update-tags">
                 "#,

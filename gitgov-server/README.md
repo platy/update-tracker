@@ -10,7 +10,7 @@ You'll need a repository ready for storing and reading file histories. You can i
 ### Clone
 
 ```sh
-rsync -avz njk.onl:/mnt/govdiff/repo/url ./repo/url
+ssh njk.onl "cd /mnt/govdiff/repo && tar czf - url" | tar xzf - -C ./repo/
 ```
 
 ### Init

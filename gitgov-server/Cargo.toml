@@ -6,6 +6,8 @@ edition = "2018"
 description = "GitGov server implementation"
 include = ["src/**/*", "README.md"]
 
+default-run = "gitgov-server"
+
 [dependencies]
 update-repo = { path = "../update-repo" }
 chrono = { workspace = true }

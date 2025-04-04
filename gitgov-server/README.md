@@ -1,6 +1,25 @@
-# Gitgov-rs
+# Govdiff-rs
 
-gitgov expects to find update emails on the filesystem, you can acheive this by installing and running [smtp-dump](https://crates.io/crates/smtp-dump).
+The main binary runs a webserver which exposes the history stored in a repository and watches for incoming update emails as a trigger to retrieve updated pages and add them to the repository.
+Govdiff expects to find update emails on the filesystem, you can achieve this by installing and running [smtp-dump](https://crates.io/crates/smtp-dump).
+
+## Repository
+
+You'll need a repository ready for storing and reading file histories. You can initialise a new one or clone an existing one.
+
+### Clone
+
+```sh
+rsync -avz njk.onl:/mnt/govdiff/repo/url ./repo/url
+```
+
+### Init
+
+```sh
+mkdir -p ./repo/url/www.gov.uk ./repo/tag
+```
+
+## Run
 
 run as daemon:
 

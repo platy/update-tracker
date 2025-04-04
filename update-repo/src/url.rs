@@ -238,7 +238,9 @@ impl<Leaf> Iterator for IterUrlRepoLeaves<'_, Leaf> {
                         Ok(dir) => dir,
                         Err(err) => return Some(Err(err)),
                     };
-                    next_dir_entry = dir.next().expect("todo: handle empty dir");
+                    next_dir_entry = dir.next().unwrap_or_else(|| {
+                        panic!("Empty dir : {}", self.url);
+                    });
                     self.stack.push(dir);
                 } else if let Some((repo_key, name)) = kind.as_leaf() {
                     if repo_key == self.repo.repo_key {

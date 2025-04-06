@@ -7,7 +7,7 @@ use std::{
     thread,
 };
 
-use gitgov_server::{data::Data, ingress, web};
+use govdiff_server::{data::Data, ingress, web};
 
 fn main() {
     #[cfg(feature = "dhat-heap")]

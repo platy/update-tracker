@@ -4,11 +4,11 @@
 //! The test can be synced with the backend by fetching new version of the docs, eg.
 //!
 //! ```sh
-//! cargo run --bin fetch https://www.gov.uk/change-name-deed-poll/make-an-adult-deed-poll gitgov-server/tests/govuk
+//! cargo run --bin fetch https://www.gov.uk/change-name-deed-poll/make-an-adult-deed-poll govdiff_server/tests/govuk
 //! ```
 //!
 
-use gitgov_server::ingress::retrieve_doc;
+use govdiff_server::ingress::retrieve_doc;
 use pretty_assertions::assert_eq;
 use update_repo::doc::content::*;
 

@@ -17,7 +17,7 @@ use std::{
 };
 use url::Url;
 
-use gitgov_server::ingress::retrieve_doc;
+use govdiff_server::ingress::retrieve_doc;
 
 fn main() -> Result<()> {
     let args: Vec<_> = args_os().collect();

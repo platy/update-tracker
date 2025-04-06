@@ -1,12 +1,12 @@
 [package]
-name = "gitgov-server"
+name = "govdiff_server"
 version = "0.2.21"
 authors = ["Mike Bush <platy@njk.onl>"]
 edition = "2018"
-description = "GitGov server implementation"
+description = "GovDiff server implementation"
 include = ["src/**/*", "README.md"]
 
-default-run = "gitgov-server"
+default-run = "govdiff_server"
 
 [dependencies]
 update-repo = { path = "../update-repo" }

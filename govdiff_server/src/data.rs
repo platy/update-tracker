@@ -11,7 +11,6 @@ use std::{
 use chrono::{DateTime, FixedOffset};
 use htmldiff::htmldiff;
 use qp_trie::Trie;
-use simsearch::SimSearch;
 use update_repo::{
     doc::{DocRepo, DocumentVersion},
     tag::{Tag, TagRepo},
@@ -30,8 +29,6 @@ pub struct Data {
     /// all updates in url and then timestamp order with tags
     index: Trie<Url, TimestampSubIndex>,
     all_tags: Vec<String>,
-    /// full text index of the updat change field, it's keyed on the index on `self.index`
-    change_index: SimSearch<UpdateRef>,
 }
 
 impl Data {
@@ -39,7 +36,6 @@ impl Data {
         let update_repo = UpdateRepo::new(repo_base.join("url")).unwrap();
         let doc_repo = DocRepo::new(repo_base.join("url")).unwrap();
 
-        let change_index = SimSearch::new();
         let updates: Vec<_> = vec![];
         let index: Trie<_, BTreeMap<_, _>> = Trie::new();
 
@@ -52,7 +48,6 @@ impl Data {
             updates,
             index,
             all_tags,
-            change_index,
         };
 
         for update in update_repo
@@ -79,7 +74,6 @@ impl Data {
 
     /// Notifies that a new update has been stored
     pub fn append_update(&mut self, update: Update) {
-        self.change_index.insert(update.update_ref().clone(), update.change());
         let update = Arc::new(update);
         self.updates.push(update.clone());
         self.index
@@ -99,27 +93,10 @@ impl Data {
         tags.insert(tag);
     }
 
-    pub fn list_updates(
-        &self,
-        base: &Url,
-        change_terms: Option<String>,
-        tag: Option<Tag>,
-    ) -> Box<dyn Iterator<Item = &Update> + '_> {
-        let change_matches = change_terms.map(|change_terms| {
-            self.change_index
-                .search(&change_terms)
-                .into_iter()
-                .collect::<std::collections::HashSet<_>>()
-        });
-
+    pub fn list_updates(&self, base: &Url, tag: Option<Tag>) -> Box<dyn Iterator<Item = &Update> + '_> {
         let match_tag_and_change = move |u: &&Update| {
             if let Some(tag) = &tag {
                 if !self.get_tags(u.update_ref()).contains(tag) {
-                    return false;
-                }
-            }
-            if let Some(change_matches) = &change_matches {
-                if !change_matches.contains(u.update_ref()) {
                     return false;
                 }
             }

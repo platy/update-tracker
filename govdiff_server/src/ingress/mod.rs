@@ -142,7 +142,7 @@ impl<'a> UpdateEmailProcessor<'a> {
                 return Ok(false);
             }
         };
-        for change in &updates {
+        for change in updates.iter().filter(allowed_path) {
             if let Err(err) = self.handle_change(change) {
                 eprintln!("Error processing change: {:?}: {:?}", change, &err);
                 return Ok(false);
@@ -190,6 +190,13 @@ impl<'a> UpdateEmailProcessor<'a> {
         }
         Ok(())
     }
+}
+
+fn allowed_path(change: &&GovUkChange) -> bool {
+    ![
+        "/guidance/teacher-misconduct-attend-a-professional-conduct-panel-hearing-or-meeting",
+        "/guidance/ministry-of-defence-police-misconduct-hearings",
+    ].contains(&change.url.path())
 }
 
 struct FetchDocs {

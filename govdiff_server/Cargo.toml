@@ -14,20 +14,20 @@ chrono = { workspace = true }
 url = { workspace = true }
 form_urlencoded = "1.0.1"
 htmldiff = "0.1.0"
-qp-trie = "0.7.7"
+qp-trie = "0.8.2"
 rouille = "3.6" # looks like this isn't getting updated, and uses multipart and buf_redux which will be reected in a future version of rust
-cacache = "10"
+cacache = "13.1.0"
 
-scraper = "0.12.0"
-mailparse = "0.13.6"
+scraper = "0.23.1"
+mailparse = "0.16.1"
 ureq = "2.3.0"
 anyhow = "1.0.44"
 dotenv = "0.15.0"
 file-locker = "1"
-chrono-tz = "0.6.0"
+chrono-tz = "0.10.3"
 
 dhat = { version = "0.3", optional = true }
-askama = "0.12.1"
+askama = "0.14.0"
 
 [dev-dependencies]
 html-diff = "0.0.6"

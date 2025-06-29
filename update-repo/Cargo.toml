@@ -8,10 +8,9 @@ description = "Core library for repository interaction"
 [dependencies]
 chrono = { workspace = true }
 url = { workspace = true }
-html5streams = { git = "http://github.com/platy/html5streams" }
+html5streams = { git = "https://github.com/platy/html5streams" }
 html5ever = "0.25.1"
 
 [dev-dependencies]
 anyhow = "1.0.44"
-chrono-tz = "0.6.0"
-clap = { version = "3.0", features = ["derive"] } 
+clap = { version = "4.5.40", features = ["derive"] }
